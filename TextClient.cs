@@ -1,6 +1,8 @@
 ﻿using Optional;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Security;
@@ -19,13 +21,15 @@ namespace ToSTextClient
         public string Username { get; protected set; }
         public uint TownPoints { get; set; }
         public uint MeritPoints { get; set; }
-        public ISet<AchievementID> EarnedAchievements { get; set; }
-        public ISet<CharacterID> OwnedCharacters { get; set; }
-        public ISet<HouseID> OwnedHouses { get; set; }
-        public ISet<PetID> OwnedPets { get; set; }
-        public ISet<LobbyIconID> OwnedLobbyIcons { get; set; }
-        public ISet<DeathAnimationID> OwnedDeathAnimations { get; set; }
+        public IList<GameModeID> ActiveGameModes { get; set; } = new List<GameModeID>();
+        public IList<AchievementID> EarnedAchievements { get; set; } = new List<AchievementID>();
+        public IList<CharacterID> OwnedCharacters { get; set; } = new List<CharacterID>();
+        public IList<HouseID> OwnedHouses { get; set; } = new List<HouseID>();
+        public IList<PetID> OwnedPets { get; set; } = new List<PetID>();
+        public IList<LobbyIconID> OwnedLobbyIcons { get; set; } = new List<LobbyIconID>();
+        public IList<DeathAnimationID> OwnedDeathAnimations { get; set; } = new List<DeathAnimationID>();
         public GameState GameState { get; set; }
+        public TextUI UI { get; set; }
 
         private Socket socket;
         private MessageParser parser;
@@ -33,6 +37,7 @@ namespace ToSTextClient
 
         static void Main(string[] args)
         {
+            Console.Title = "Town of Salem (Unofficial Client)";
             Console.WriteLine("Build {0}", BUILD_NUMBER);
             Console.Write("Username: ");
             string user = Console.ReadLine();
@@ -52,8 +57,7 @@ namespace ToSTextClient
             Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
             Console.WriteLine("Connecting to server");
             socket.Connect("live4.tos.blankmediagames.com", 3600);
-            new TextClient(socket, user, Convert.ToBase64String(encpw));
-            while (true) ;
+            new TextClient(socket, user, Convert.ToBase64String(encpw)).UI.Run();
         }
 
         TextClient(Socket socket, string user, string encpw)
@@ -61,75 +65,89 @@ namespace ToSTextClient
             this.socket = socket;
             buffer = new byte[4096];
             parser = new MessageParser(ParseMessage, (buffer, index, length) => socket.Send(buffer, index, length, SocketFlags.None));
-            Console.WriteLine("Authenticating");
             parser.Authenticate(AuthenticationModeID.BMG_FORUMS, true, BUILD_NUMBER, user, encpw);
+            UI = new TextUI(this);
+            UI.HomeView.Lines.Add("Authenticating...");
+            UI.RedrawView(UI.HomeView);
             QueueReceive();
         }
 
         private void ParseMessage(byte[] buffer, int index, int length)
         {
+            //Console.WriteLine("Received {0}", (ServerMessageType)buffer[index]);
             switch ((ServerMessageType)buffer[index++])
             {
                 case ServerMessageType.AUTHENTICATED:
                     ServerMessageParsers.AUTHENTICATED.Build(buffer, index, length).Parse(out bool registered);
-                    if (!registered) Console.WriteLine("Requires registration");
-                    else Console.WriteLine("Successfully authenticated");
+                    if (!registered) UI.HomeView.Lines[0] = "Authentication failed: registration required";
+                    else UI.HomeView.Lines.SafeReplace(0, "Authenticated. Loading user information...");
+                    UI.RedrawView(UI.HomeView);
                     break;
                 case ServerMessageType.CREATE_LOBBY:
                     ServerMessageParsers.CREATE_LOBBY.Build(buffer, index, length).Parse(out bool host).Parse(out GameModeID gameMode);
-                    GameState = new GameState(gameMode);
+                    GameState = new GameState(this, gameMode);
                     GameState.Host = host;
-                    Console.WriteLine("Joined lobby. Current players:");
+                    UI.GameView.Lines.Clear();
+                    UI.SelectMainView(UI.GameView);
+                    UI.AppendLine("Joined a lobby for {0}.", gameMode.ToString().ToDisplayName());
                     break;
                 case ServerMessageType.SET_HOST:
                     GameState.Host = true;
                     break;
                 case ServerMessageType.USER_JOINED_GAME:
                     ServerMessageParsers.USER_JOINED_GAME.Build(buffer, index, length).Parse(out host).Parse(out bool display).Parse(out string username).Parse(out PlayerID playerID).Parse(out LobbyIconID lobbyIconID);
-                    Console.WriteLine(display ? "{0}{1} has joined the game." : "\t{0}{1}", username, host ? " (host)" : "");
+                    //Console.WriteLine(display ? "{0}{1} has joined the game." : "\t{0}{1}", username, host ? " (host)" : "");
+                    if (display) UI.AppendLine("{0} has joined the game.", username);
                     GameState.PlayerCount++;
                     PlayerState playerState = GameState.Players[(int)playerID];
-                    playerState.Name = username;
+                    playerState.Name = host ? string.Format("(H) {0}", username) : username;
                     playerState.SelectedLobbyIcon = lobbyIconID;
                     break;
                 case ServerMessageType.USER_LEFT_GAME:
-                    ServerMessageParsers.USER_LEFT_GAME.Build(buffer, index, length).Parse(out _).Parse(out display).Parse(out playerID);
-                    if (display) Console.WriteLine("{0} has left the game.", GameState.ToName(playerID));
+                    ServerMessageParsers.USER_LEFT_GAME.Build(buffer, index, length).Parse(out bool update).Parse(out display).Parse(out playerID);
+                    if (display) UI.AppendLine("{0} has left the game. {1}", GameState.ToName(playerID), update);
                     break;
                 case ServerMessageType.CHAT_BOX_MESSAGE:
                     ServerMessageParsers.CHAT_BOX_MESSAGE.Build(buffer, index, length).Parse(out playerID).Parse(out string message);
-                    Console.WriteLine("{0}: {1}", GameState.ToName(playerID), message);
+                    UI.AppendLine("{0}: {1}", GameState.ToName(playerID), message);
                     break;
                 // Add missing cases here
                 case ServerMessageType.NO_LONGER_HOST:
                     GameState.Host = false;
                     break;
                 case ServerMessageType.DO_NOT_SPAM:
-                    Console.WriteLine("Please do not spam the chat.");
+                    UI.AppendLine("Please do not spam the chat.");
                     break;
                 case ServerMessageType.HOW_MANY_PLAYERS_AND_GAMES:
                     ServerMessageParsers.HOW_MANY_PLAYERS_AND_GAMES.Build(buffer, index, length).Parse(out uint gameCount).Parse(out uint playerCount);
-                    Console.WriteLine("There are currently {0} players online and {1} games being played.", playerCount, gameCount);
+                    UI.AppendLine("There are currently {0} players online and {1} games being played.", playerCount, gameCount);
                     break;
                 case ServerMessageType.SYSTEM_MESSAGE:
                     ServerMessageParsers.SYSTEM_MESSAGE.Build(buffer, index, length).Parse(out message);
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine(message);
-                    Console.ForegroundColor = ConsoleColor.White;
+                    UI.AppendLine("(System) {0}", message);
                     break;
                 case ServerMessageType.STRING_TABLE_MESSAGE:
                     ServerMessageParsers.STRING_TABLE_MESSAGE.Build(buffer, index, length).Parse(out LocalizationTableID tableMessage);
-                    Console.WriteLine(tableMessage);
+                    UI.AppendLine(tableMessage.ToString().ToDisplayName());     // TODO: Write the localized message instead of the name
+                    break;
+                // Add missing cases here
+                case ServerMessageType.USER_INFORMATION:
+                    ServerMessageParsers.USER_INFORMATION.Build(buffer, index, length).Parse(out username).Parse(out uint townPoints).Parse(out uint meritPoints);
+                    UI.HomeView.Lines.SafeReplace(0, string.Format("{0} ({1} TP, {2} MP)", Username = username, TownPoints = townPoints, MeritPoints = meritPoints));
+                    UI.RedrawView(UI.HomeView);
                     break;
                 // Add missing cases here
                 case ServerMessageType.FORCED_LOGOUT:
-                    Console.WriteLine("You have been forcefully disconnected");
+                    UI.InfoView.Lines.SafeReplace(0, "You have been forcefully disconnected");
+                    UI.OpenSideView(UI.InfoView);
                     break;
                 case ServerMessageType.RETURN_TO_HOME_PAGE:
+                    UI.SelectMainView(UI.HomeView);
                     GameState = null;
                     break;
                 // Add missing cases here
                 case ServerMessageType.PURCHASED_CHARACTERS:
+                    OwnedCharacters.Clear();
                     ServerMessageParsers.PURCHASED_CHARACTERS.Build(buffer, index, length).Parse(parser =>
                     {
                         RootParser root = parser.Parse(out CharacterID id);
@@ -138,6 +156,7 @@ namespace ToSTextClient
                     }, out _);
                     break;
                 case ServerMessageType.PURCHASED_HOUSES:
+                    OwnedHouses.Clear();
                     ServerMessageParsers.PURCHASED_HOUSES.Build(buffer, index, length).Parse(parser =>
                     {
                         RootParser root = parser.Parse(out HouseID id);
@@ -147,6 +166,7 @@ namespace ToSTextClient
                     break;
                 // Add missing cases here
                 case ServerMessageType.PURCHASED_PETS:
+                    OwnedPets.Clear();
                     ServerMessageParsers.PURCHASED_PETS.Build(buffer, index, length).Parse(parser =>
                     {
                         RootParser root = parser.Parse(out PetID id);
@@ -156,18 +176,22 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.SET_LAST_BONUS_WIN_TIME:
                     ServerMessageParsers.SET_LAST_BONUS_WIN_TIME.Build(buffer, index, length).Parse(out uint seconds);
-                    Console.WriteLine("Next FWotD bonus is available in {0} seconds.", seconds);
+                    UI.HomeView.Lines.SafeReplace(1, string.Format("Next FWotD bonus is available in {0} seconds.", seconds));
+                    UI.RedrawView(UI.HomeView);
                     break;
                 case ServerMessageType.EARNED_ACHIEVEMENTS_52:
+                    EarnedAchievements.Clear();
                     ServerMessageParsers.EARNED_ACHIEVEMENTS_52.Build(buffer, index, length).Parse(parser =>
                     {
                         RootParser root = parser.Parse(out AchievementID id);
                         EarnedAchievements.Add(id);
                         return root;
                     }, out int achievementCount);
-                    Console.WriteLine("Number of achievements earned: {0}", achievementCount);
+                    UI.HomeView.Lines.SafeReplace(2, string.Format("Number of achievements earned: {0}", achievementCount));
+                    UI.RedrawView(UI.HomeView);
                     break;
                 case ServerMessageType.PURCHASED_LOBBY_ICONS:
+                    OwnedLobbyIcons.Clear();
                     ServerMessageParsers.PURCHASED_LOBBY_ICONS.Build(buffer, index, length).Parse(parser =>
                     {
                         RootParser root = parser.Parse(out LobbyIconID id);
@@ -176,6 +200,7 @@ namespace ToSTextClient
                     }, out _);
                     break;
                 case ServerMessageType.PURCHASED_DEATH_ANIMATIONS:
+                    OwnedDeathAnimations.Clear();
                     ServerMessageParsers.PURCHASED_DEATH_ANIMATIONS.Build(buffer, index, length).Parse(parser =>
                     {
                         RootParser root = parser.Parse(out DeathAnimationID id);
@@ -186,28 +211,37 @@ namespace ToSTextClient
                 // Add missing cases here
                 case ServerMessageType.START_RANKED_QUEUE:
                     ServerMessageParsers.START_RANKED_QUEUE.Build(buffer, index, length).Parse(out bool requeue).Parse(out seconds);
-                    if (requeue) Console.WriteLine("There weren't enough players to fill your game, so you've been requeued.");
-                    Console.WriteLine("The ranked game will start in {0} seconds.");
+                    if (requeue)
+                    {
+                        UI.InfoView.Lines.SafeReplace(0, "There weren't enough players to fill your game, so you've been requeued.");
+                        UI.OpenSideView(UI.InfoView);
+                    }
+                    UI.HomeView.Lines.SafeReplace(3, string.Format("The ranked game will start in {0} seconds.", seconds));
+                    UI.RedrawView(UI.HomeView);
                     break;
                 case ServerMessageType.LEAVE_RANKED_QUEUE:
-                    Console.WriteLine("You have left the ranked queue.");
+                    UI.HomeView.Lines.SafeReplace(3, "You have left the ranked queue.");
+                    UI.RedrawView(UI.HomeView);
                     break;
                 case ServerMessageType.ACCEPT_RANKED_POPUP:
-                    Console.WriteLine("Are you ready for the Ranked game? (10 seconds to reply)");
+                    UI.HomeView.Lines.SafeReplace(3, "Are you ready for the Ranked game? (10 seconds to reply)");
+                    UI.RedrawView(UI.HomeView);
                     break;
                 // Add missing cases here
                 case ServerMessageType.RANKED_TIMEOUT_DURATION:
                     ServerMessageParsers.RANKED_TIMEOUT_DURATION.Build(buffer, index, length).Parse(out seconds);
-                    Console.WriteLine("You have been timed out from Ranked for leaving for {0} seconds.", seconds);
+                    UI.InfoView.Lines.SafeReplace(0, string.Format("You have been timed out from Ranked for leaving for {0} seconds.", seconds));
+                    UI.OpenSideView(UI.InfoView);
                     break;
                 // Add missing cases here
                 case ServerMessageType.USER_JOINING_LOBBY_TOO_QUICKLY_MESSAGE:
-                    Console.WriteLine("Please wait 15 seconds before attempting to rejoin a lobby.");
+                    UI.HomeView.Lines.SafeReplace(3, "Please wait 15 seconds before attempting to rejoin a lobby.");
+                    UI.RedrawView(UI.HomeView);
                     break;
                 // Add missing cases here
                 case ServerMessageType.PICK_NAMES:
                     GameState.OnStart();
-                    Console.WriteLine("Please choose a name (or wait to get a random name)");
+                    UI.AppendLine("Please choose a name (or wait to get a random name)");
                     break;
                 case ServerMessageType.NAMES_AND_POSITIONS_OF_USERS:
                     ServerMessageParsers.NAMES_AND_POSITIONS_OF_USERS.Build(buffer, index, length).Parse(out playerID).Parse(out string name);
@@ -234,9 +268,8 @@ namespace ToSTextClient
                         return root;
                     }, out int count);
                     GameState.Players[(int)playerID].Dead = true;
-                    Console.WriteLine("Death causes:");
-                    foreach (DeathCauseID cause in causes) Console.WriteLine("\t{0}", cause);
-                    Console.WriteLine("Their role was {0}.", roleID);
+                    Console.WriteLine("Death causes: {0}", string.Join(", ", causes.Select(dc => dc.ToString().ToDisplayName())));
+                    Console.WriteLine("Their role was {0}.", roleID.ToString().ToDisplayName());
                     break;
                 // Add missing cases here
                 case ServerMessageType.START_VOTING:
@@ -272,129 +305,127 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.USER_CHANGED_VOTE:
                     ServerMessageParsers.USER_CHANGED_VOTE.Build(buffer, index, length).Parse(out playerID).Parse(out votedID).Parse(out _).Parse(out voteCount);
-                    Console.WriteLine("{0} has changed their {2} votes to be against {1}", GameState.ToName(playerID), GameState.ToName(votedID), voteCount);
+                    Console.WriteLine("{0} has changed their {2} votes to be against {1}.", GameState.ToName(playerID), GameState.ToName(votedID), voteCount);
                     break;
                 case ServerMessageType.USER_DIED:
                     Console.WriteLine("You have died.");
                     break;
                 case ServerMessageType.RESURRECTION:
                     ServerMessageParsers.RESURRECTION.Build(buffer, index, length).Parse(out playerID).Parse(out roleID);
-                    Console.WriteLine("{0} ({1}) has been brought back to life.", GameState.ToName(playerID), roleID);
+                    Console.WriteLine("{0} ({1}) has been brought back to life.", GameState.ToName(playerID), roleID.ToString().ToDisplayName());
                     break;
                 case ServerMessageType.TELL_ROLE_LIST:
-                    Console.WriteLine("Role list:");
-                    ServerMessageParsers.TELL_ROLE_LIST.Build(buffer, index, length).Parse(parser =>
-                    {
-                        RootParser root = parser.Parse(out RoleID id);
-                        Console.WriteLine(id);
-                        return root;
-                    }, out _);
+                    index = 0;
+                    ServerMessageParsers.TELL_ROLE_LIST.Build(buffer, index, length).Parse(parser => parser.Parse(out GameState.Roles[index++]), out _);
                     break;
                 case ServerMessageType.USER_CHOSEN_NAME:
                     ServerMessageParsers.USER_CHOSEN_NAME.Build(buffer, index, length).Parse(out tableMessage).Parse(out playerID);
-                    Console.WriteLine("{0} {1}", tableMessage, GameState.ToName(playerID));
+                    UI.AppendLine("{0} ({1})", tableMessage.ToString().ToDisplayName(), GameState.ToName(playerID));
                     break;
                 case ServerMessageType.OTHER_MAFIA:
-                    Console.WriteLine("Your team:");
+                    GameState.Team.Clear();
                     ServerMessageParsers.OTHER_MAFIA.Build(buffer, index, length).Parse(parser =>
                     {
                         RootParser root = parser.Parse(out playerID).Parse(out roleID);
-                        Console.WriteLine("\t{0} ({1})", GameState.ToName(playerID), roleID);
+                        PlayerState teammate = GameState.Players[(int)playerID];
+                        teammate.Role = roleID;
+                        GameState.Team.Add(teammate);
                         return root;
                     }, out _);
                     break;
                 case ServerMessageType.TELL_TOWN_AMNESIAC_CHANGED_ROLE:
                     ServerMessageParsers.TELL_TOWN_AMNESIAC_CHANGED_ROLE.Build(buffer, index, length).Parse(out roleID);
-                    Console.WriteLine("An Amnesiac has remembered {0}.", roleID);
+                    UI.AppendLine("An Amnesiac has remembered {0}.", roleID);
                     break;
                 case ServerMessageType.AMNESIAC_CHANGED_ROLE:
                     ServerMessageParsers.AMNESIAC_CHANGED_ROLE.Build(buffer, index, length).Parse(out roleID).Parse(out targetID);
-                    Console.WriteLine("You successfully remembered your role.");
+                    UI.AppendLine("You successfully remembered your role.");
                     GameState.Role = roleID;
                     targetID.MatchSome(id => GameState.Target = id);
                     break;
                 case ServerMessageType.BROUGHT_BACK_TO_LIFE:
-                    Console.WriteLine("You have been brought back to life.");
+                    UI.AppendLine("You have been brought back to life.");
                     break;
                 case ServerMessageType.START_FIRST_DAY:
                     GameState.Day = 1;
                     break;
                 case ServerMessageType.BEING_JAILED:
-                    Console.WriteLine("You have been dragged off to jail.");
+                    UI.AppendLine("You have been dragged off to jail.");
                     break;
                 case ServerMessageType.JAILED_TARGET:
                     ServerMessageParsers.JAILED_TARGET.Build(buffer, index, length).Parse(out playerID).Parse(out bool canExecute).Parse(out bool executedTown);
-                    Console.WriteLine("You have dragged {0} off to jail.", GameState.ToName(playerID));
-                    Console.WriteLine(canExecute ? "You may execute tonight." : executedTown ? "You cannot execute any more as you have executed a Town member." : "You cannot execute tonight.");
+                    UI.AppendLine("You have dragged {0} off to jail.", GameState.ToName(playerID));
+                    UI.AppendLine(canExecute ? "You may execute tonight." : executedTown ? "You cannot execute any more as you have executed a Town member." : "You cannot execute tonight.");
                     break;
                 case ServerMessageType.USER_JUDGEMENT_VOTED:
                     ServerMessageParsers.USER_JUDGEMENT_VOTED.Build(buffer, index, length).Parse(out playerID);
-                    Console.WriteLine("{0} has voted.", GameState.ToName(playerID));
+                    UI.AppendLine("{0} has voted.", GameState.ToName(playerID));
                     break;
                 case ServerMessageType.USER_CHANGED_JUDGEMENT_VOTE:
                     ServerMessageParsers.USER_CHANGED_JUDGEMENT_VOTE.Build(buffer, index, length).Parse(out playerID);
-                    Console.WriteLine("{0} has changed their voted.", GameState.ToName(playerID));
+                    UI.AppendLine("{0} has changed their voted.", GameState.ToName(playerID));
                     break;
                 case ServerMessageType.USER_CANCELED_JUDGEMENT_VOTE:
                     ServerMessageParsers.USER_CANCELED_JUDGEMENT_VOTE.Build(buffer, index, length).Parse(out playerID);
-                    Console.WriteLine("{0} has cancelled their vote.", GameState.ToName(playerID));
+                    UI.AppendLine("{0} has cancelled their vote.", GameState.ToName(playerID));
                     break;
                 case ServerMessageType.TELL_JUDGEMENT_VOTES:
                     ServerMessageParsers.TELL_JUDGEMENT_VOTES.Build(buffer, index, length).Parse(out playerID).Parse(out JudgementVoteID judgementVote);
-                    Console.WriteLine("{0} voted {1}.", GameState.ToName(playerID), judgementVote);
+                    UI.AppendLine("{0} voted {1}.", GameState.ToName(playerID), judgementVote);
                     break;
                 case ServerMessageType.EXECUTIONER_COMPLETED_GOAL:
-                    Console.WriteLine("You have successfully gotten your target lynched.");
+                    UI.AppendLine("You have successfully gotten your target lynched.");
                     break;
                 case ServerMessageType.JESTER_COMPLETED_GOAL:
-                    Console.WriteLine("You have successfully gotten yourself lynched.");
+                    UI.AppendLine("You have successfully gotten yourself lynched.");
                     break;
                 case ServerMessageType.MAYOR_REVEALED:
                     ServerMessageParsers.MAYOR_REVEALED.Build(buffer, index, length).Parse(out playerID);
-                    Console.WriteLine("{0} has revealed themselves as the mayor.", GameState.ToName(playerID));
+                    UI.AppendLine("{0} has revealed themselves as the mayor.", GameState.ToName(playerID));
                     break;
                 case ServerMessageType.MAYOR_REVEALED_AND_ALREADY_VOTED:
                     ServerMessageParsers.MAYOR_REVEALED_AND_ALREADY_VOTED.Build(buffer, index, length).Parse(out playerID);
-                    Console.WriteLine("{0} has revealed themselves as the mayor.", GameState.ToName(playerID));
+                    UI.AppendLine("{0} has revealed themselves as the mayor.", GameState.ToName(playerID));
                     break;
                 case ServerMessageType.DISGUISER_STOLE_YOUR_IDENTITY:
                     ServerMessageParsers.DISGUISER_STOLE_YOUR_IDENTITY.Build(buffer, index, length).Parse(out playerID);
-                    Console.WriteLine("A disguiser stole your identity. You are now {0}.", GameState.ToName(playerID));
+                    UI.AppendLine("A disguiser stole your identity. You are now {0}.", GameState.ToName(playerID));
                     break;
                 case ServerMessageType.DISGUISER_CHANGED_IDENTITY:
                     ServerMessageParsers.DISGUISER_CHANGED_IDENTITY.Build(buffer, index, length).Parse(out playerID);
-                    Console.WriteLine("You have successfully disguised yourself as {0}.", GameState.ToName(playerID));
+                    UI.AppendLine("You have successfully disguised yourself as {0}.", GameState.ToName(playerID));
                     break;
                 case ServerMessageType.DISGUISER_CHANGED_UPDATE_MAFIA:
                     ServerMessageParsers.DISGUISER_CHANGED_UPDATE_MAFIA.Build(buffer, index, length).Parse(out playerID).Parse(out PlayerID disguiserID);
-                    Console.WriteLine("{1} has successfully disguised themselves as {0}.", GameState.ToName(playerID), GameState.ToName(disguiserID));
+                    UI.AppendLine("{1} has successfully disguised themselves as {0}.", GameState.ToName(playerID), GameState.ToName(disguiserID));
                     break;
                 case ServerMessageType.MEDIUM_IS_TALKING_TO_US:
-                    Console.WriteLine("A medium is talking to you.");
+                    UI.AppendLine("A medium is talking to you.");
                     break;
                 case ServerMessageType.MEDIUM_COMMUNICATING:
-                    Console.WriteLine("You have opened a communication with the living.");
+                    UI.AppendLine("You have opened a communication with the living.");
                     break;
                 case ServerMessageType.TELL_LAST_WILL:
                     ServerMessageParsers.TELL_LAST_WILL.Build(buffer, index, length).Parse(out playerID).Parse(out bool hasLastWill).Parse(hasLastWill, parser =>
                     {
                         RootParser root = parser.Parse(out string will);
                         GameState.Players[(int)playerID].LastWill = will;
+                        // TODO: Display last will
                         return root;
                     }, parser =>
                     {
-                        Console.WriteLine("We could not find a last will.");
+                        UI.AppendLine("We could not find a last will.");
                         return parser;
                     });
                     break;
                 case ServerMessageType.HOW_MANY_ABILITIES_LEFT:
                     ServerMessageParsers.HOW_MANY_ABILITIES_LEFT.Build(buffer, index, length).Parse(out byte abilitiesLeft);
-                    Console.WriteLine("Abilities left: {0}", abilitiesLeft);
+                    UI.AppendLine("Abilities left: {0}", abilitiesLeft);
                     break;
                 // Add missing cases here
                 case ServerMessageType.TELL_JANITOR_TARGETS_ROLE:
                     ServerMessageParsers.TELL_JANITOR_TARGETS_ROLE.Build(buffer, index, length).Parse(out roleID);
-                    Console.WriteLine("You secretly know that your target's role was {0}.", roleID);
+                    UI.AppendLine("You secretly know that your target's role was {0}.", roleID);
                     break;
                 case ServerMessageType.TELL_JANITOR_TARGETS_WILL:
                     ServerMessageParsers.TELL_JANITOR_TARGETS_WILL.Build(buffer, index, length).Parse(out playerID).Parse(out string lastWill);
@@ -402,71 +433,76 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.SOMEONE_HAS_WON:
                     RepeatParser<Parser<PlayerID, RootParser>, RootParser> winnerParser = ServerMessageParsers.SOMEONE_HAS_WON.Build(buffer, index, length).Parse(out FactionID factionID);
-                    Console.WriteLine("Winning faction: {0}", factionID);
+                    UI.AppendLine("Winning faction: {0}", factionID);
                     winnerParser.Parse(p =>
                     {
                         RootParser root = p.Parse(out playerID);
-                        Console.WriteLine("\t{0}", GameState.ToName(playerID));
+                        UI.AppendLine("\t{0}", GameState.ToName(playerID));
                         return root;
                     }, out _);
                     break;
                 case ServerMessageType.MAFIOSO_PROMOTED_TO_GODFATHER:
-                    Console.WriteLine("You have been promoted to Godfather.");
+                    UI.AppendLine("You have been promoted to Godfather.");
                     // TODO: Check if role should be changed (as well as for the other role change messages).
                     break;
                 case ServerMessageType.MAFIOSO_PROMOTED_TO_GODFATHER_UPDATE_MAFIA:
                     ServerMessageParsers.MAFIOSO_PROMOTED_TO_GODFATHER_UPDATE_MAFIA.Build(buffer, index, length).Parse(out playerID);
-                    Console.WriteLine("{0} has been promoted to Godfather.", GameState.ToName(playerID));
+                    UI.AppendLine("{0} has been promoted to Godfather.", GameState.ToName(playerID));
+                    GameState.Players[(int)playerID].Role = RoleID.GODFATHER;
+                    UI.RedrawView(UI.TeamView);
                     break;
                 case ServerMessageType.MAFIA_PROMOTED_TO_MAFIOSO:
-                    Console.WriteLine("You have been promoted to Mafioso.");
+                    UI.AppendLine("You have been promoted to Mafioso.");
                     break;
                 case ServerMessageType.TELL_MAFIA_ABOUT_MAFIOSO_PROMOTION:
                     ServerMessageParsers.TELL_MAFIA_ABOUT_MAFIOSO_PROMOTION.Build(buffer, index, length).Parse(out playerID);
-                    Console.WriteLine("{0} has been promoted to Mafioso.", GameState.ToName(playerID));
+                    UI.AppendLine("{0} has been promoted to Mafioso.", GameState.ToName(playerID));
+                    GameState.Players[(int)playerID].Role = RoleID.MAFIOSO;
+                    UI.RedrawView(UI.TeamView);
                     break;
                 case ServerMessageType.EXECUTIONER_CONVERTED_TO_JESTER:
-                    Console.WriteLine("Your target has died.");
+                    UI.AppendLine("Your target has died.");
                     break;
                 case ServerMessageType.AMNESIAC_BECAME_MAFIA_OR_WITCH:
                     ServerMessageParsers.AMNESIAC_BECAME_MAFIA_OR_WITCH.Build(buffer, index, length).Parse(out playerID).Parse(out roleID);
-                    Console.WriteLine("{0} has remembered {1}.", GameState.ToName(playerID), roleID);
+                    UI.AppendLine("{0} has remembered {1}.", GameState.ToName(playerID), roleID);
                     break;
                 case ServerMessageType.USER_DISCONNECTED:
                     ServerMessageParsers.USER_DISCONNECTED.Build(buffer, index, length).Parse(out playerID);
-                    Console.WriteLine("{0} has left the game.", GameState.ToName(playerID));
+                    UI.AppendLine("{0} has left the game.", GameState.ToName(playerID));
                     break;
                 case ServerMessageType.MAFIA_WAS_JAILED:
                     ServerMessageParsers.MAFIA_WAS_JAILED.Build(buffer, index, length).Parse(out playerID);
-                    Console.WriteLine("{0} has been dragged off to jail.", GameState.ToName(playerID));
+                    UI.AppendLine("{0} has been dragged off to jail.", GameState.ToName(GameState.Players[(int)playerID]));
                     break;
                 case ServerMessageType.INVALID_NAME_MESSAGE:
                     ServerMessageParsers.INVALID_NAME_MESSAGE.Build(buffer, index, length).Parse(out InvalidNameStatus invalidNameStatus);
-                    Console.WriteLine("Invalid name: {0}", invalidNameStatus);
+                    UI.AppendLine("Invalid name: {0}", invalidNameStatus);
                     break;
                 // Add missing cases here
                 case ServerMessageType.DEATH_NOTE:
                     ServerMessageParsers.DEATH_NOTE.Build(buffer, index, length).Parse(out playerID).Parse(out _).Parse(out string deathNote);
                     GameState.Players[(int)playerID].DeathNote = deathNote;
+                    // TODO: Display death note
                     break;
                 // Add missing cases here
                 case ServerMessageType.RESURRECTION_SET_ALIVE:
                     ServerMessageParsers.RESURRECTION_SET_ALIVE.Build(buffer, index, length).Parse(out playerID);
-                    Console.WriteLine("{0} has been brought back to life (set alive).", GameState.ToName(playerID));
+                    UI.AppendLine("{0} has been brought back to life (set alive).", GameState.ToName(playerID));
                     break;
                 case ServerMessageType.START_DEFENSE:
-                    Console.WriteLine("What is your defense?");
+                    UI.AppendLine("What is your defense?");
                     break;
                 case ServerMessageType.USER_LEFT_DURING_SELECTION:
                     ServerMessageParsers.USER_LEFT_DURING_SELECTION.Build(buffer, index, length).Parse(out playerID);
-                    Console.WriteLine("{0} left during selection.", GameState.ToName(playerID));
+                    UI.AppendLine("{0} left during selection.", GameState.ToName(playerID));
                     break;
                 case ServerMessageType.VIGILANTE_KILLED_TOWN:
-                    Console.WriteLine("You put your gun away out of fear of shooting another town member.");
+                    UI.AppendLine("You put your gun away out of fear of shooting another town member.");
                     break;
                 case ServerMessageType.NOTIFY_USERS_OF_PRIVATE_MESSAGE:
                     ServerMessageParsers.NOTIFY_USERS_OF_PRIVATE_MESSAGE.Build(buffer, index, length).Parse(out playerID).Parse(out PlayerID receiverID);
-                    Console.WriteLine("{0} is whispering to {1}.", GameState.ToName(playerID), GameState.ToName(receiverID));
+                    UI.AppendLine("{0} is whispering to {1}.", GameState.ToName(playerID), GameState.ToName(receiverID));
                     break;
                 case ServerMessageType.PRIVATE_MESSAGE:
                     receiverID = default(PlayerID);
@@ -475,13 +511,13 @@ namespace ToSTextClient
                     switch (pmType)
                     {
                         case PrivateMessageType.TO:
-                            Console.WriteLine("To {0}: {1}", playerID, message);
+                            UI.AppendLine("To {0}: {1}", playerID, message);
                             break;
                         case PrivateMessageType.FROM:
-                            Console.WriteLine("From {0}: {1}", playerID, message);
+                            UI.AppendLine("From {0}: {1}", playerID, message);
                             break;
                         case PrivateMessageType.FROM_TO:
-                            Console.WriteLine("From {0} to {1}: {2}", playerID, receiverID, message);
+                            UI.AppendLine("From {0} to {1}: {2}", playerID, receiverID, message);
                             break;
                     }
                     break;
@@ -489,71 +525,86 @@ namespace ToSTextClient
                     ServerMessageParsers.EARNED_ACHIEVEMENTS_161.Build(buffer, index, length).Parse(parser =>
                     {
                         RootParser root = parser.Parse(out AchievementID id);
-                        Console.WriteLine("You have earned the achievement {0}.", id);
+                        UI.AppendLine("You have earned the achievement {0}.", id.ToString().ToDisplayName());
                         return root;
                     }, out _);
                     break;
                 case ServerMessageType.AUTHENTICATION_FAILED:
                     ServerMessageParsers.AUTHENTICATION_FAILED.Build(buffer, index, length).Parse(out AuthenticationResult authResult);
-                    Console.WriteLine("Authentication failed: {0}", authResult);
+                    UI.HomeView.Lines.SafeReplace(0, string.Format("Authentication failed: {0}", authResult));
+                    UI.RedrawView(UI.HomeView);
                     break;
                 case ServerMessageType.SPY_NIGHT_ABILITY_MESSAGE:
                     ServerMessageParsers.SPY_NIGHT_ABILITY_MESSAGE.Build(buffer, index, length).Parse(out factionID).Parse(out playerID);
-                    Console.WriteLine("A member of the {0} visited {1}.", GameState.ToName(playerID));
+                    UI.AppendLine("A member of the {0} visited {1}.", GameState.ToName(playerID));
                     break;
                 case ServerMessageType.ONE_DAY_BEFORE_STALEMATE:
-                    Console.WriteLine("If noone dies by tomorrow, the game will end in a draw.");
+                    UI.AppendLine("If noone dies by tomorrow, the game will end in a draw.");
                     break;
                 // Add missing cases here
                 case ServerMessageType.FULL_MOON_NIGHT:
-                    Console.WriteLine("There is a full moon out tonight.");
+                    UI.AppendLine("There is a full moon out tonight.");
                     break;
                 // Add missing cases here
                 case ServerMessageType.VAMPIRE_PROMOTION:
-                    Console.WriteLine("You have been bitten by a Vampire.");
+                    UI.AppendLine("You have been bitten by a Vampire.");        // TODO: Check if I should set role here.
                     break;
                 case ServerMessageType.OTHER_VAMPIRES:
-                    Console.WriteLine("Your team:");
+                    GameState.Team.Clear();
                     ServerMessageParsers.OTHER_VAMPIRES.Build(buffer, index, length).Parse(parser =>
                     {
                         RootParser root = parser.Parse(out playerID).Parse(out bool youngestVampire);
-                        Console.WriteLine(youngestVampire ? "\t{0} (Youngest)" : "\t{0}", GameState.ToName(playerID));
+                        //Console.WriteLine(youngestVampire ? "\t{0} (Youngest)" : "\t{0}", GameState.ToName(playerID));
+                        // TODO: Find an easy way of displaying youngest
+                        GameState.Team.Add(GameState.Players[(int)playerID]);
                         return root;
                     }, out _);
                     break;
                 case ServerMessageType.ADD_VAMPIRE:
                     ServerMessageParsers.ADD_VAMPIRE.Build(buffer, index, length).Parse(out playerID).Parse(out bool youngest);
-                    Console.WriteLine(youngest ? "{0} is now the youngest vampire." : "{0} is now a vampire.", GameState.ToName(playerID));
+                    UI.AppendLine(youngest ? "{0} is now the youngest vampire." : "{0} is now a vampire.", GameState.ToName(playerID));
                     break;
                 case ServerMessageType.CAN_VAMPIRES_CONVERT:
                     ServerMessageParsers.CAN_VAMPIRES_CONVERT.Build(buffer, index, length).Parse(out bool canConvert);
-                    Console.WriteLine(canConvert ? "You may bite someone tonight." : "You cannot bite anyone tonight.");
+                    UI.AppendLine(canConvert ? "You may bite someone tonight." : "You cannot bite anyone tonight.");
                     break;
                 case ServerMessageType.VAMPIRE_DIED:
                     ServerMessageParsers.VAMPIRE_DIED.Build(buffer, index, length).Parse(out playerID).Parse(out targetID);
-                    Console.WriteLine("{0}, your teammate, died.");
-                    targetID.MatchSome(id => Console.WriteLine("{0} is now the youngest vampire.", GameState.ToName(id)));
+                    UI.AppendLine("{0}, your teammate, died.");
+                    targetID.MatchSome(id => UI.AppendLine("{0} is now the youngest vampire.", GameState.ToName(id)));
                     break;
                 case ServerMessageType.VAMPIRE_HUNTER_PROMOTED:
-                    Console.WriteLine("All vampires have died, so you have become a vigilante with 1 bullet.");
+                    UI.AppendLine("All vampires have died, so you have become a vigilante with 1 bullet.");     // TODO: Check if I should set role here.
                     break;
                 case ServerMessageType.VAMPIRE_VISITED_MESSAGE:
                     ServerMessageParsers.VAMPIRE_VISITED_MESSAGE.Build(buffer, index, length).Parse(out playerID);
-                    Console.WriteLine("Vampires visited {0}.", GameState.ToName(playerID));
+                    UI.AppendLine("Vampires visited {0}.", GameState.ToName(playerID));
                     break;
                 // Add missing cases here
                 case ServerMessageType.TRANSPORTER_NOTIFICATION:
                     ServerMessageParsers.TRANSPORTER_NOTIFICATION.Build(buffer, index, length).Parse(out playerID).Parse(out receiverID);
-                    Console.WriteLine("A transporter transported {0} and {1}.", GameState.ToName(playerID), GameState.ToName(receiverID));
+                    UI.AppendLine("A transporter transported {0} and {1}.", GameState.ToName(playerID), GameState.ToName(receiverID));
+                    break;
+                // Add missing cases here
+                case ServerMessageType.ACTIVE_GAME_MODES:
+                    ActiveGameModes.Clear();
+                    ServerMessageParsers.ACTIVE_GAME_MODES.Build(buffer, index, length).Parse(parser =>
+                    {
+                        RootParser root = parser.Parse(out GameModeID id);
+                        ActiveGameModes.Add(id);
+                        return root;
+                    }, out _);
+                    UI.RedrawView(UI.GameModeView);
                     break;
                 // Add missing cases here
                 case ServerMessageType.JAILOR_DEATH_NOTE:
                     ServerMessageParsers.JAILOR_DEATH_NOTE.Build(buffer, index, length).Parse(out playerID).Parse(out _).Parse(out ExecuteReasonID executeReasonID);
-                    Console.WriteLine("Reason for {0}'s execution: {1}", GameState.ToName(playerID), executeReasonID);
+                    UI.AppendLine("Reason for {0}'s execution: {1}", GameState.ToName(playerID), executeReasonID.ToString().ToDisplayName());
                     break;
                 case ServerMessageType.DISCONNECTED:
                     ServerMessageParsers.DISCONNECTED.Build(buffer, index, length).Parse(out DisconnectReasonID dcReason);
-                    Console.WriteLine("Disconnected: {0}", dcReason);
+                    UI.HomeView.Lines.SafeReplace(0, string.Format("Disconnected: {0}", dcReason));
+                    UI.RedrawView(UI.HomeView);
                     break;
                 // Add missing cases here
             }
@@ -624,5 +675,26 @@ namespace ToSTextClient
             //foreach (byte b in ba) hex.AppendFormat("{0:x2}", b);
             return hex.ToString();
         }
+    }
+
+    public static class Extensions
+    {
+
+        public static void SafeReplace<T>(this List<T> list, int index, T value)
+        {
+            while (list.Count < index) list.Add(default(T));
+            if (list.Count == index) list.Add(value);
+            else list[index] = value;
+        }
+
+        public static V SafeIndex<K, V>(this Dictionary<K, V> dict, K key, Func<V> ifAbsent)
+        {
+            if (dict.ContainsKey(key)) return dict[key];
+            V result = ifAbsent();
+            dict.Add(key, result);
+            return result;
+        }
+
+        public static string ToDisplayName(this string value) => CultureInfo.CurrentCulture.TextInfo.ToTitleCase(value.Replace('_', ' ').ToLower());
     }
 }
