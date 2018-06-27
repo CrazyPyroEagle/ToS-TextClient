@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using ToSParser;
 
@@ -15,11 +17,13 @@ namespace ToSTextClient
         protected Dictionary<View, Stack<View>> hiddenSideViews;
         protected int mainWidth;
         protected int sideWidth;
+        protected int sideStart;
         protected int textHeight;
         protected int cursorTop;
 
         protected StringBuilder inputBuffer;
         protected int bufferIndex;
+        protected bool commandMode;
 
         public TextView HomeView { get; protected set; }
         public ListView<GameModeID> GameModeView { get; protected set; }
@@ -39,23 +43,25 @@ namespace ToSTextClient
             HomeView = new TextView(60, 2);
             GameModeView = new ListView<GameModeID>(" # Game Modes", () => game.ActiveGameModes, gm => gm.ToString().ToDisplayName(), 25, 1);
             GameView = new TextView(60, 20);
-            PlayerListView = new ListView<PlayerState>(" # Players", () => game.GameState.Players, p => game.GameState.ToName(p.Self), 25, 1);
+            PlayerListView = new ListView<PlayerState>(" # Players", () => game.GameState.Players, p => p.Dead ? "" : string.Format("{0,2} {1}", (int)p.Self + 1, game.GameState.ToName(p.Self)), 25, 1);
             RoleListView = new ListView<RoleID>(" # Role List", () => game.GameState.Roles, r => r.ToString().ToDisplayName(), 25, 1);
-            GraveyardView = new ListView<PlayerState>(" # Graveyard", () => game.GameState.Graveyard, ps => game.GameState.ToName(ps), 40, 1);
-            TeamView = new ListView<PlayerState>(" # Team", () => game.GameState.Team, ps => game.GameState.ToName(ps), 40, 1);
+            GraveyardView = new ListView<PlayerState>(" # Graveyard", () => game.GameState.Players.Where(ps => ps.Dead).ToList(), ps => game.GameState.ToName(ps), 40, 1);
+            TeamView = new ListView<PlayerState>(" # Team", () => game.GameState.Team, ps => !ps.Dead || ps.Role == RoleID.DISGUISER ? game.GameState.ToName(ps) : "", 40, 1);
             LastWillView = new TextView(40, 20);
-            InfoView = new TextView(25, 1);
+            InfoView = new TextView(50, 1);
 
             mainView = HomeView;
             sideViews = new Stack<View>();
             sideViews.Push(GameModeView);
             Stack<View> gameSideViews = new Stack<View>();
             gameSideViews.Push(RoleListView);
+            gameSideViews.Push(GraveyardView);
             gameSideViews.Push(PlayerListView);
             hiddenSideViews = new Dictionary<View, Stack<View>>();
             hiddenSideViews.Add(mainView, sideViews);
             hiddenSideViews.Add(GameView, gameSideViews);
             inputBuffer = new StringBuilder();
+            commandMode = true;
         }
 
         public void Run()
@@ -64,13 +70,119 @@ namespace ToSTextClient
             int height = 0;
             while (true)
             {
-                if (width != Console.BufferWidth || height != Console.WindowHeight)
+                try
                 {
-                    RedrawAll();
-                    width = Console.BufferWidth;
-                    height = Console.WindowHeight;
+                    if (width != Console.BufferWidth || height != Console.WindowHeight)
+                    {
+                        RedrawAll();
+                        width = Console.BufferWidth;
+                        height = Console.WindowHeight;
+                    }
+                    string input = ReadUserInput();
+                    if (mainView == HomeView)
+                    {
+                        if (Enum.TryParse(input.Replace(' ', '_').ToUpper(), out GameModeID gameMode) && game.ActiveGameModes.Contains(gameMode))
+                        {
+                            game.Parser.JoinLobby(gameMode);
+                        }
+                        else
+                        {
+                            InfoView.Lines.SafeReplace(0, string.Format("Cannot join game mode \"{0}\"", input));
+                            OpenSideView(InfoView);
+                        }
+                    }
+                    else if (mainView == GameView)
+                    {
+                        if (!commandMode)
+                        {
+                            game.Parser.SendChatBoxMessage(input);
+                            continue;
+                        }
+                        string[] cmd = input.Split(' ');
+                        try
+                        {
+                            if (cmd[0].ToLower() == "leave") game.Parser.LeaveGame();
+                            else if (cmd[0].ToLower() == "leavepost") game.Parser.LeavePostGameLobby();
+                            else if (cmd[0].ToLower() == "repick") game.Parser.VoteToRepickHost();
+                            else if (cmd[0].ToLower() == "add")
+                            {
+                                RoleID role = (RoleID)Enum.Parse(typeof(RoleID), string.Join("_", cmd, 1, cmd.Length - 1).ToUpper());
+                                game.Parser.ClickedOnAddButton(role);
+                                game.GameState.AddRole(role);
+                            }
+                            else if (cmd[0].ToLower() == "remove")
+                            {
+                                byte slot = (byte)(byte.Parse(cmd[1]) - 1u);
+                                game.Parser.ClickedOnRemoveButton(slot);
+                                game.GameState.RemoveRole(slot);
+                            }
+                            else if (cmd[0].ToLower() == "start") game.Parser.ClickedOnStartButton();
+                            else if (cmd[0].ToLower() == "t")
+                            {
+                                if (cmd[1].ToLower() == "none")
+                                {
+                                    game.Parser.SetTarget(PlayerID.JAILOR);
+                                    if (game.GameState.Role.IsMafia()) game.Parser.SetTargetMafiaOrWitch(PlayerID.JAILOR, TargetType.CANCEL_TARGET_1);
+                                    AppendLine("Unset target");
+                                }
+                                else
+                                {
+                                    PlayerID target = (PlayerID)(byte.Parse(cmd[1]) - 1);
+                                    game.Parser.SetTarget(target);
+                                    if (game.GameState.Role.IsMafia()) game.Parser.SetTargetMafiaOrWitch(PlayerID.JAILOR, TargetType.SET_TARGET_1);
+                                    AppendLine("Set target to {0}", game.GameState.ToName(target));
+                                }
+                            }
+                            else if (cmd[0].ToLower() == "t2")
+                            {
+                                if (cmd[1].ToLower() == "none")
+                                {
+                                    game.Parser.SetSecondTarget(PlayerID.JAILOR);
+                                    if (game.GameState.Role.IsMafia()) game.Parser.SetTargetMafiaOrWitch(PlayerID.JAILOR, TargetType.CANCEL_TARGET_2);
+                                    AppendLine("Unset secondary target");
+                                }
+                                else
+                                {
+                                    PlayerID target = (PlayerID)(byte.Parse(cmd[1]) - 1);
+                                    game.Parser.SetSecondTarget(target);
+                                    if (game.GameState.Role.IsMafia()) game.Parser.SetTargetMafiaOrWitch(PlayerID.JAILOR, TargetType.SET_TARGET_2);
+                                    AppendLine("Set secondary target to {0}", game.GameState.ToName(target));
+                                }
+                            }
+                            else if (cmd[0].ToLower() == "v") game.Parser.SetVote(cmd[1].ToLower() == "none" ? PlayerID.JAILOR : (PlayerID)(byte.Parse(cmd[1]) - 1));
+                            else if (cmd[0].ToLower() == "guilty") game.Parser.JudgementVoteGuilty();
+                            else if (cmd[0].ToLower() == "innocent") game.Parser.JudgementVoteInnocent();
+                            else if (cmd[0].ToLower() == "w") game.Parser.SendPrivateMessage((PlayerID)(byte.Parse(cmd[1]) - 1), string.Join(" ", cmd, 2, cmd.Length - 2));
+                            else if (cmd[0].ToLower() == "td")
+                            {
+                                if (cmd[1].ToLower() == "none")
+                                {
+                                    game.Parser.SetDayChoice(PlayerID.JAILOR);
+                                    AppendLine("Unset day target");
+                                }
+                                else
+                                {
+                                    PlayerID target = (PlayerID)(byte.Parse(cmd[1]) - 1);
+                                    game.Parser.SetDayChoice(target);
+                                    AppendLine("Set day target to {0}", game.GameState.ToName(target));
+                                }
+                            }
+                            else if (cmd[0].ToLower() == "n") game.Parser.ChooseName(string.Join(" ", cmd, 1, cmd.Length - 1));
+                            else if (cmd[0].ToLower() == "redraw") RedrawAll();
+                        }
+                        catch (Exception e)
+                        {
+                            Debug.WriteLine("Failed to parse GameView command: {0}", input);
+                            Debug.WriteLine(e);
+                            AppendLine("Failed to parse command: {0}", e.Message);
+                        }
+                    }
                 }
-                string input = ReadUserInput();
+                catch (Exception e)
+                {
+                    Debug.WriteLine("Exception in UI loop");
+                    Debug.WriteLine(e);
+                }
             }
         }
 
@@ -79,6 +191,7 @@ namespace ToSTextClient
             lock (drawLock)
             {
                 if (mainView == view) return;
+                if (view == GameView) commandMode = false;
                 mainView = view;
                 sideViews = hiddenSideViews.SafeIndex(view, () => new Stack<View>());
                 RedrawAll();
@@ -106,18 +219,17 @@ namespace ToSTextClient
                 int lineIndex = GameView.Lines.Count;
                 GameView.Lines.Add(text);
                 if (GameView != mainView) return;
-                Console.CursorTop = lineIndex;
+                Console.CursorTop = textHeight++;
                 Console.CursorLeft = 0;
-                GameView.Draw(mainWidth, lineIndex, 0);
-                textHeight++;
-                int newCursorTop = textHeight < Console.WindowHeight ? Console.WindowHeight - 1 : textHeight;
+                GameView.Draw(mainWidth, lineIndex);
+                int windowHeight = Console.WindowHeight;
+                int newCursorTop = textHeight < windowHeight ? windowHeight - 1 : textHeight;
                 if (newCursorTop != cursorTop)
                 {
-                    RedrawSideViews();
-                    Console.CursorTop = cursorTop = newCursorTop;
-                    Console.CursorLeft = 0;
-                    Console.Write("> ");
-                    Console.Write(inputBuffer.ToString());
+                    cursorTop = newCursorTop;
+                    RedrawCursor();
+                    //RedrawSideViews();
+                    Console.MoveBufferArea(mainWidth, sideStart, sideWidth + 1, textHeight - sideStart - 1, mainWidth, cursorTop - textHeight + sideStart + 1);
                 }
                 else
                 {
@@ -128,6 +240,15 @@ namespace ToSTextClient
         }
 
         public void AppendLine(string text, params object[] args) => AppendLine(string.Format(text, args));
+
+        public void RedrawCursor()
+        {
+            Console.CursorTop = cursorTop;
+            Console.CursorLeft = 0;
+            Console.Write(commandMode ? "/ " : "> ");
+            Console.Write(inputBuffer.ToString());
+            Console.CursorLeft = bufferIndex + 2;
+        }
 
         public void RedrawView(View view, int? consoleWidth = null)
         {
@@ -156,11 +277,10 @@ namespace ToSTextClient
                     int newCursorTop = textHeight < Console.WindowHeight ? Console.WindowHeight - 1 : textHeight;
                     if (newCursorTop != cursorTop)
                     {
+                        cursorTop = newCursorTop;
                         RedrawSideViews(consoleWidth);
-                        Console.CursorTop = cursorTop = newCursorTop;
-                        Console.CursorLeft = 0;
-                        Console.Write("> ");
-                        Console.Write(inputBuffer.ToString());
+                        RedrawCursor();
+                        return;
                     }
                 }
                 Console.CursorTop = cursorTop;
@@ -208,7 +328,8 @@ namespace ToSTextClient
                         {
                             lastSideHeight = view.GetFullHeight();
                             if (lastSideHeight == 0) continue;
-                            int lineIndex = Math.Max(0, lastSideHeight - (Console.CursorTop = Math.Max(0, cursorTop - sideHeight - lastSideHeight)));
+                            Console.CursorTop = Math.Max(0, cursorTop - sideHeight - lastSideHeight);
+                            int lineIndex = Math.Max(0, lastSideHeight + sideHeight - cursorTop);
                             sideHeight += lastSideHeight = view.Draw(sideWidth, lineIndex);
                         }
                         if (sideHeight >= cursorTop)
@@ -217,16 +338,20 @@ namespace ToSTextClient
                             break;
                         }
                     }
-                    for (int currentLine = cursorTop - sideHeight; currentLine < cursorTop; currentLine++)
+                    for (; sideStart < cursorTop - sideHeight; sideStart++)
+                    {
+                        Console.CursorTop = sideStart;
+                        Console.CursorLeft = mainWidth;
+                        Console.Write("".PadRight(sideWidth));
+                    }
+                    //for (int currentLine = cursorTop - sideHeight; currentLine < cursorTop; currentLine++)
+                    for (int currentLine = cursorTop - Console.WindowHeight + 1; currentLine < cursorTop; currentLine++)
                     {
                         Console.CursorTop = currentLine;
+                        Console.CursorLeft = mainWidth;
+                        Console.Write('|');
                         Console.CursorLeft = cw - 1;
                         Console.WriteLine();
-                        if (currentLine < textHeight)
-                        {
-                            Console.CursorLeft = mainWidth;
-                            Console.Write('|');
-                        }
                     }
                 }
                 Console.CursorTop = cursorTop;
@@ -245,21 +370,9 @@ namespace ToSTextClient
                 int consoleWidth = Console.BufferWidth - 1;
                 if (consoleWidth < minimumWidth) Console.BufferWidth = (consoleWidth = minimumWidth) + 1;
                 textHeight = mainView.Draw(mainWidth = consoleWidth - sideWidth - 1);
-                Console.CursorTop = cursorTop = textHeight < Console.WindowHeight ? Console.WindowHeight - 1 : textHeight;
-                Console.CursorLeft = 0;
-                Console.Write("> ");
-                Console.Write(inputBuffer.ToString());
+                cursorTop = textHeight < Console.WindowHeight ? Console.WindowHeight - 1 : textHeight;
+                RedrawCursor();
                 RedrawSideViews(consoleWidth);
-            }
-        }
-
-        protected void DrawHome()
-        {
-            WriteLineFullWidth(string.Format("{0} ({1} TP, {2} MP)", game.Username, game.TownPoints, game.MeritPoints));
-            if (game.ActiveGameModes != null)
-            {
-                WriteLineFullWidth("Active game modes:");
-                foreach (GameModeID gameMode in game.ActiveGameModes) WriteLineFullWidth(string.Format("    {0}", gameMode));
             }
         }
 
@@ -273,10 +386,13 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
+                if (mainView == GameView) commandMode = false;
+                Console.CursorTop = cursorTop;
+                Console.CursorLeft = 0;
+                Console.Write("".PadRight(inputBuffer.Length + 2));
                 Console.CursorTop = cursorTop = textHeight < Console.WindowHeight ? Console.WindowHeight - 1 : textHeight;
                 Console.CursorLeft = 0;
-                Console.Write("> ".PadRight(inputBuffer.Length + 2));
-                Console.CursorLeft = 2;
+                Console.Write(commandMode ? "/ " : "> ");
                 inputBuffer.Clear();
             }
             ConsoleKeyInfo key;
@@ -288,18 +404,26 @@ namespace ToSTextClient
                 {
                     Console.CursorTop = cursorTop;
                     Console.CursorLeft = bufferIndex + 2;
-                    if (!char.IsControl(key.KeyChar) && Console.CursorLeft + 1 < Console.BufferWidth)
-                    {
-                        inputBuffer.Insert(bufferIndex++, key.KeyChar);
-                        Console.Write(key.KeyChar);
-                        int cursor = Console.CursorLeft;
-                        Console.Write(inputBuffer.ToString(bufferIndex, inputBuffer.Length - bufferIndex));
-                        Console.CursorLeft = cursor;
-                    }
-                    else
                     {
                         switch (key.Key)
                         {
+                            default:
+                                if (!char.IsControl(key.KeyChar) && Console.CursorLeft + 1 < Console.BufferWidth)
+                                {
+                                    if (!commandMode && inputBuffer.Length == 0 && key.KeyChar == '/')
+                                    {
+                                        commandMode = true;
+                                        Console.CursorLeft = 0;
+                                        Console.Write("/ ");
+                                        break;
+                                    }
+                                    inputBuffer.Insert(bufferIndex++, key.KeyChar);
+                                    Console.Write(key.KeyChar);
+                                    int cursor = Console.CursorLeft;
+                                    Console.Write(inputBuffer.ToString(bufferIndex, inputBuffer.Length - bufferIndex));
+                                    Console.CursorLeft = cursor;
+                                }
+                                break;
                             case ConsoleKey.Backspace:
                                 if (bufferIndex > 0)
                                 {
@@ -309,6 +433,18 @@ namespace ToSTextClient
                                     Console.Write(" ");
                                     Console.CursorLeft = cursor;
                                 }
+                                else if (commandMode && mainView == GameView)
+                                {
+                                    commandMode = false;
+                                    Console.CursorLeft = 0;
+                                    Console.Write("> ");
+                                }
+                                break;
+                            case ConsoleKey.Escape:
+                                if (mainView == GameView) commandMode = false;
+                                Console.CursorLeft = 0;
+                                Console.Write((commandMode ? "/ " : "> ").PadRight(inputBuffer.Length + 2));
+                                Console.CursorLeft = 2;
                                 break;
                             case ConsoleKey.End:
                                 bufferIndex = inputBuffer.Length;
@@ -356,7 +492,7 @@ namespace ToSTextClient
         int GetMinimumWidth();
         int GetMinimumHeight();
         int GetFullHeight();
-        int Draw(int width, int startLine = 0, int lineCount = 0);
+        int Draw(int width, int startLine = 0);
         RedrawResult Redraw(int width);
     } 
 
@@ -384,7 +520,7 @@ namespace ToSTextClient
 
         public int GetFullHeight() => Math.Max(Lines.Count, minimumHeight);
 
-        public int Draw(int width, int startLine = 0, int lineCount = 0)
+        public int Draw(int width, int startLine = 0)
         {
             lastDrawnTop = Console.CursorTop;
             int cursorOffset = lastDrawnLeft = Console.CursorLeft;
@@ -394,13 +530,13 @@ namespace ToSTextClient
                 Console.CursorTop++;
                 Console.CursorLeft = cursorOffset;
             }
-            while (startLine <= lineCount-- || startLine++ <= minimumHeight)
+            while (startLine++ <= minimumHeight)
             {
                 Console.Write("".PadRight(width));
                 Console.CursorTop++;
                 Console.CursorLeft = cursorOffset;
             }
-            return lastWrittenLines = startLine;
+            return lastWrittenLines = Lines.Count - lastStartLine;
         }
 
         public RedrawResult Redraw(int width)
@@ -408,7 +544,15 @@ namespace ToSTextClient
             if (lastWrittenLines != GetFullHeight()) return RedrawResult.HEIGHT_CHANGED;
             Console.CursorTop = lastDrawnTop;
             Console.CursorLeft = lastDrawnLeft;
-            Draw(width, lastStartLine, lastWrittenLines);
+            int written = lastWrittenLines;
+            Draw(width, lastStartLine);
+            int cursorOffset = Console.CursorLeft;
+            while (lastWrittenLines < written--)
+            {
+                Console.Write("".PadRight(width));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
             return RedrawResult.SUCCESS;
         }
     }
@@ -442,7 +586,7 @@ namespace ToSTextClient
 
         public int GetFullHeight() => Math.Max(list().Count + 1, minimumHeight);
 
-        public int Draw(int width, int startLine = 0, int lineCount = 0)
+        public int Draw(int width, int startLine = 0)
         {
             lastDrawnTop = Console.CursorTop;
             int cursorOffset = lastDrawnLeft = Console.CursorLeft;
@@ -459,7 +603,7 @@ namespace ToSTextClient
                 Console.CursorTop++;
                 Console.CursorLeft = cursorOffset;
             }
-            while (startLine <= lineCount-- || startLine++ <= minimumHeight)
+            while (startLine++ <= minimumHeight)
             {
                 Console.Write("".PadRight(width));
                 Console.CursorTop++;
@@ -473,7 +617,15 @@ namespace ToSTextClient
             if (lastWrittenLines != GetFullHeight()) return RedrawResult.HEIGHT_CHANGED;
             Console.CursorTop = lastDrawnTop;
             Console.CursorLeft = lastDrawnLeft;
-            Draw(width, lastStartLine, lastWrittenLines);
+            int written = lastWrittenLines;
+            Draw(width, lastStartLine);
+            int cursorOffset = Console.CursorLeft;
+            while (lastWrittenLines < written--)
+            {
+                Console.Write("".PadRight(width));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
             return RedrawResult.SUCCESS;
         }
     }
