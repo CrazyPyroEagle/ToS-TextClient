@@ -24,6 +24,7 @@ namespace ToSTextClient
         public PlayerState[] Players { get; protected set; } = new PlayerState[15];
         public RoleID[] Roles { get; protected set; } = new RoleID[0];
         public List<PlayerState> Team { get; set; } = new List<PlayerState>();
+        public List<PlayerState> Graveyard { get; set; } = new List<PlayerState>();
         public int PlayerCount { get; set; }
         public int Day
         {
@@ -72,6 +73,17 @@ namespace ToSTextClient
             game.UI.RedrawSideViews();
         }
 
+        public void RemovePlayer(PlayerID player)
+        {
+            for (int index = (int)player + 1; index < Players.Length; index++)
+            {
+                Players[index].Self--;
+                Players[index - 1] = Players[index];
+            }
+            Players[14] = new PlayerState(this, PlayerID.PLAYER_15);
+            game.UI.RedrawView(game.UI.PlayerListView);
+        }
+
         public void AddRole(RoleID role)
         {
             RoleID[] newRoles = new RoleID[Roles.Length + 1];
@@ -93,10 +105,10 @@ namespace ToSTextClient
             game.UI.RedrawView(game.UI.RoleListView);
         }
 
-        public string ToName(PlayerID playerID)
+        public string ToName(PlayerID playerID, bool inList = false)
         {
             int rawID = (int)playerID;
-            if (rawID < Players.Length) return string.Format(playerID == HostID ? "{0} (Host)" : "{0}", Players[rawID]?.Name ?? string.Format("#{0}", rawID + 1));
+            if (rawID < Players.Length) return string.Format(playerID == HostID ? inList ? "{0,2} {1} (Host)" : "(Host) {1}" : inList ? Players[rawID]?.Left ?? false ? "{0,2} [{1}]" : "{0,2} {1}" : "({0}) {1}", rawID + 1, Players[rawID]?.Name ?? string.Format("#{0}", rawID + 1));
             switch (playerID)
             {
                 case PlayerID.JAILOR:
@@ -111,10 +123,10 @@ namespace ToSTextClient
             return string.Format("#{0}", rawID + 1);
         }
 
-        public string ToName(PlayerState playerState)
+        public string ToName(PlayerState playerState, bool inList = false)
         {
-            if (playerState.Role == null) return ToName(playerState.Self);
-            return string.Format("{0} ({1})", ToName(playerState.Self), playerState.Role?.ToString()?.ToDisplayName());
+            if (playerState.Role == null) return ToName(playerState.Self, inList);
+            return string.Format("{0} ({1})", ToName(playerState.Self, inList), playerState.Role?.ToString()?.ToDisplayName());
         }
 
         private void PopulatePlayers()
@@ -125,7 +137,7 @@ namespace ToSTextClient
 
     class PlayerState
     {
-        public PlayerID Self { get; protected set; }
+        public PlayerID Self { get; set; }
         public string Name
         {
             get { return _Name; }
@@ -144,15 +156,41 @@ namespace ToSTextClient
         public bool Dead
         {
             get { return _Dead; }
-            set { if (_Dead = value) game.UI.AppendLine("{0} died", game.ToName(Self)); game.UI.RedrawView(game.UI.GraveyardView); game.UI.RedrawView(game.UI.TeamView); }
+            set { if (_Dead = value) game.UI.AppendLine("{0} died", game.ToName(Self)); game.Graveyard.Add(this); game.UI.RedrawView(game.UI.GraveyardView); game.UI.RedrawView(game.UI.TeamView); }
         }
-        public string LastWill { get; set; }
-        public string DeathNote { get; set; }
+        public bool Left
+        {
+            get { return _Left; }
+            set { _Left = value; game.UI.RedrawView(game.UI.PlayerListView); game.UI.RedrawView(game.UI.TeamView); game.UI.RedrawView(game.UI.GraveyardView); }
+        }
+        public string LastWill
+        {
+            get { return _LastWill; }
+            set
+            {
+                game.UI.LastWillView.Title = string.Format(" # (LW) {0}", game.ToName(Self));
+                game.UI.LastWillView.Value = _LastWill = value;
+                game.UI.OpenSideView(game.UI.LastWillView);
+            }
+        }
+        public string DeathNote
+        {
+            get { return _DeathNote; }
+            set
+            {
+                game.UI.LastWillView.Title = string.Format(" # (DN) {0}", game.ToName(Self));
+                game.UI.LastWillView.Value = _DeathNote = value;
+                game.UI.OpenSideView(game.UI.LastWillView);
+            }
+        }
 
         private GameState game;
         private string _Name;
         private RoleID? _Role;
         private bool _Dead;
+        private bool _Left;
+        private string _LastWill;
+        private string _DeathNote;
 
         public PlayerState(GameState parent, PlayerID self)
         {

@@ -32,7 +32,7 @@ namespace ToSTextClient
         public ListView<RoleID> RoleListView { get; protected set; }
         public ListView<PlayerState> GraveyardView { get; protected set; }
         public ListView<PlayerState> TeamView { get; protected set; }
-        public TextView LastWillView { get; protected set; }
+        public WillView LastWillView { get; protected set; }
         public TextView InfoView { get; protected set; }
 
         public TextUI(TextClient game)
@@ -41,13 +41,13 @@ namespace ToSTextClient
             drawLock = new object();
 
             HomeView = new TextView(60, 2);
-            GameModeView = new ListView<GameModeID>(" # Game Modes", () => game.ActiveGameModes, gm => gm.ToString().ToDisplayName(), 25, 1);
+            GameModeView = new ListView<GameModeID>(" # Game Modes", () => game.ActiveGameModes, gm => gm.ToString().ToDisplayName(), 25);
             GameView = new TextView(60, 20);
-            PlayerListView = new ListView<PlayerState>(" # Players", () => game.GameState.Players, p => p.Dead ? "" : string.Format("{0,2} {1}", (int)p.Self + 1, game.GameState.ToName(p.Self)), 25, 1);
-            RoleListView = new ListView<RoleID>(" # Role List", () => game.GameState.Roles, r => r.ToString().ToDisplayName(), 25, 1);
-            GraveyardView = new ListView<PlayerState>(" # Graveyard", () => game.GameState.Players.Where(ps => ps.Dead).ToList(), ps => game.GameState.ToName(ps), 40, 1);
-            TeamView = new ListView<PlayerState>(" # Team", () => game.GameState.Team, ps => !ps.Dead || ps.Role == RoleID.DISGUISER ? game.GameState.ToName(ps) : "", 40, 1);
-            LastWillView = new TextView(40, 20);
+            PlayerListView = new ListView<PlayerState>(" # Players", () => game.GameState.Players, p => p.Dead ? "" : game.GameState.ToName(p.Self, true), 25);
+            RoleListView = new ListView<RoleID>(" # Role List", () => game.GameState.Roles, r => r.ToString().ToDisplayName(), 25);
+            GraveyardView = new ListView<PlayerState>(" # Graveyard", () => game.GameState.Graveyard, ps => game.GameState.ToName(ps, true), 40);
+            TeamView = new ListView<PlayerState>(" # Team", () => game.GameState.Team, ps => !ps.Dead || ps.Role == RoleID.DISGUISER ? game.GameState.ToName(ps, true) : "", 40);
+            LastWillView = new WillView();
             InfoView = new TextView(50, 1);
 
             mainView = HomeView;
@@ -117,6 +117,7 @@ namespace ToSTextClient
                                 game.GameState.RemoveRole(slot);
                             }
                             else if (cmd[0].ToLower() == "start") game.Parser.ClickedOnStartButton();
+                            else if (cmd[0].ToLower() == "n") game.Parser.ChooseName(string.Join(" ", cmd, 1, cmd.Length - 1));
                             else if (cmd[0].ToLower() == "t")
                             {
                                 if (cmd[1].ToLower() == "none")
@@ -167,7 +168,39 @@ namespace ToSTextClient
                                     AppendLine("Set day target to {0}", game.GameState.ToName(target));
                                 }
                             }
-                            else if (cmd[0].ToLower() == "n") game.Parser.ChooseName(string.Join(" ", cmd, 1, cmd.Length - 1));
+                            else if (cmd[0].ToLower() == "lw")
+                            {
+                                byte rawPlayer = byte.Parse(cmd[1]);
+                                PlayerState ps = game.GameState.Players[--rawPlayer];
+                                if (!ps.Dead)
+                                {
+                                    AppendLine("{0} isn't dead, so you can't see their last will", game.GameState.ToName((PlayerID)rawPlayer));
+                                    continue;
+                                }
+                                LastWillView.Title = string.Format(" # (LW) {0}", game.GameState.ToName((PlayerID)rawPlayer));
+                                LastWillView.Value = ps.LastWill;
+                                OpenSideView(LastWillView);
+                            }
+                            else if (cmd[0].ToLower() == "dn")
+                            {
+                                byte rawPlayer = byte.Parse(cmd[1]);
+                                PlayerState ps = game.GameState.Players[--rawPlayer];
+                                if (!ps.Dead)
+                                {
+                                    AppendLine("{0} isn't dead, so you can't see their death note", game.GameState.ToName((PlayerID)rawPlayer));
+                                    continue;
+                                }
+                                LastWillView.Title = string.Format(" # (DN) {0}", game.GameState.ToName((PlayerID)rawPlayer));
+                                LastWillView.Value = ps.LastWill;
+                                OpenSideView(LastWillView);
+                            }
+                            else if (cmd[0].ToLower() == "report")
+                            {
+                                PlayerID player = (PlayerID)(byte.Parse(cmd[1]) - 1u);
+                                ReportReasonID reason = (ReportReasonID)Enum.Parse(typeof(ReportReasonID), cmd[2].ToUpper());
+                                game.Parser.ReportPlayer(player, reason, string.Join(" ", cmd, 3, cmd.Length - 3));
+                                AppendLine("Reported {0} for {1}", game.GameState.ToName(player), reason.ToString().ToLower().Replace('_', ' '));
+                            }
                             else if (cmd[0].ToLower() == "redraw") RedrawAll();
                         }
                         catch (Exception e)
@@ -229,13 +262,17 @@ namespace ToSTextClient
                     cursorTop = newCursorTop;
                     RedrawCursor();
                     //RedrawSideViews();
-                    Console.MoveBufferArea(mainWidth, sideStart, sideWidth + 1, textHeight - sideStart - 1, mainWidth, cursorTop - textHeight + sideStart + 1);
+                    int targetHeight = cursorTop - textHeight + sideStart + 1;
+                    Console.MoveBufferArea(mainWidth, sideStart, sideWidth + 1, textHeight - sideStart - 1, mainWidth, targetHeight);
+                    for (; sideStart < targetHeight; sideStart++)
+                    {
+                        Console.CursorTop = sideStart;
+                        Console.CursorLeft = mainWidth;
+                        Console.Write("|");
+                    }
                 }
-                else
-                {
-                    Console.CursorTop = cursorTop;
-                    Console.CursorLeft = bufferIndex + 2;
-                }
+                Console.CursorTop = cursorTop;
+                Console.CursorLeft = bufferIndex + 2;
             }
         }
 
@@ -288,7 +325,7 @@ namespace ToSTextClient
             }
         }
 
-        public void RedrawSideView(View view)
+        protected void RedrawSideView(View view)
         {
             lock (drawLock)
             {
@@ -344,6 +381,7 @@ namespace ToSTextClient
                         Console.CursorLeft = mainWidth;
                         Console.Write("".PadRight(sideWidth));
                     }
+                    sideStart = cursorTop - sideHeight;     // only has an effect if sideStart > cursorTop - sideHeight
                     //for (int currentLine = cursorTop - sideHeight; currentLine < cursorTop; currentLine++)
                     for (int currentLine = cursorTop - Console.WindowHeight + 1; currentLine < cursorTop; currentLine++)
                     {
@@ -417,6 +455,12 @@ namespace ToSTextClient
                                         Console.Write("/ ");
                                         break;
                                     }
+                                    else if (commandMode && mainView == GameView && bufferIndex == 0 && key.KeyChar == '/')
+                                    {
+                                        commandMode = false;
+                                        Console.CursorLeft = 0;
+                                        Console.Write("> ");
+                                    }
                                     inputBuffer.Insert(bufferIndex++, key.KeyChar);
                                     Console.Write(key.KeyChar);
                                     int cursor = Console.CursorLeft;
@@ -487,18 +531,8 @@ namespace ToSTextClient
         }
     }
 
-    interface View
+    abstract class View
     {
-        int GetMinimumWidth();
-        int GetMinimumHeight();
-        int GetFullHeight();
-        int Draw(int width, int startLine = 0);
-        RedrawResult Redraw(int width);
-    } 
-
-    class TextView : View
-    {
-        public List<string> Lines { get; protected set; }
         protected int minimumWidth;
         protected int minimumHeight;
 
@@ -507,39 +541,17 @@ namespace ToSTextClient
         protected int lastStartLine;
         protected int lastWrittenLines;
 
-        public TextView(int minimumWidth, int minimumHeight)
+        protected View(int minimumWidth, int minimumHeight)
         {
-            Lines = new List<string>();
             this.minimumWidth = minimumWidth;
             this.minimumHeight = minimumHeight;
         }
 
-        public int GetMinimumWidth() => minimumWidth;
-
-        public int GetMinimumHeight() => minimumHeight;
-
-        public int GetFullHeight() => Math.Max(Lines.Count, minimumHeight);
-
-        public int Draw(int width, int startLine = 0)
-        {
-            lastDrawnTop = Console.CursorTop;
-            int cursorOffset = lastDrawnLeft = Console.CursorLeft;
-            for (lastStartLine = startLine; startLine < Lines.Count; startLine++)
-            {
-                Console.Write(Lines[startLine].Length > width ? Lines[startLine].Substring(0, width) : Lines[startLine].PadRight(width));
-                Console.CursorTop++;
-                Console.CursorLeft = cursorOffset;
-            }
-            while (startLine++ <= minimumHeight)
-            {
-                Console.Write("".PadRight(width));
-                Console.CursorTop++;
-                Console.CursorLeft = cursorOffset;
-            }
-            return lastWrittenLines = Lines.Count - lastStartLine;
-        }
-
-        public RedrawResult Redraw(int width)
+        public virtual int GetMinimumWidth() => minimumWidth;
+        public virtual int GetMinimumHeight() => minimumHeight;
+        public abstract int GetFullHeight();
+        public abstract int Draw(int width, int startLine = 0);
+        public virtual RedrawResult Redraw(int width)
         {
             if (lastWrittenLines != GetFullHeight()) return RedrawResult.HEIGHT_CHANGED;
             Console.CursorTop = lastDrawnTop;
@@ -557,36 +569,51 @@ namespace ToSTextClient
         }
     }
 
+    class TextView : View
+    {
+        public List<string> Lines { get; protected set; }
+
+        public TextView(int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight) => Lines = new List<string>();
+
+        public override int GetFullHeight() => Math.Max(Lines.Count, minimumHeight);
+
+        public override int Draw(int width, int startLine = 0)
+        {
+            lastDrawnTop = Console.CursorTop;
+            int cursorOffset = lastDrawnLeft = Console.CursorLeft;
+            for (lastStartLine = startLine; startLine < Lines.Count; startLine++)
+            {
+                Console.Write(Lines[startLine].Length > width ? Lines[startLine].Substring(0, width) : Lines[startLine].PadRight(width));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
+            while (startLine++ < minimumHeight)
+            {
+                Console.Write("".PadRight(width));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
+            return lastWrittenLines = Lines.Count - lastStartLine;
+        }
+    }
+
     class ListView<T> : View
     {
         public string Title { get; set; }
 
         protected Func<IList<T>> list;
         protected Func<T, string> map;
-        protected int minimumWidth;
-        protected int minimumHeight;
 
-        protected int lastDrawnTop;
-        protected int lastDrawnLeft;
-        protected int lastStartLine;
-        protected int lastWrittenLines;
-
-        public ListView(string title, Func<IList<T>> list, Func<T, string> map, int minimumWidth, int minimumHeight)
+        public ListView(string title, Func<IList<T>> list, Func<T, string> map, int minimumWidth) : base(minimumWidth, 1)
         {
             Title = title;
             this.list = list;
             this.map = map;
-            this.minimumWidth = minimumWidth;
-            this.minimumHeight = minimumHeight;
         }
 
-        public int GetMinimumWidth() => minimumWidth;
+        public override int GetFullHeight() => Math.Max(list().Count + 1, minimumHeight);
 
-        public int GetMinimumHeight() => minimumHeight;
-
-        public int GetFullHeight() => Math.Max(list().Count + 1, minimumHeight);
-
-        public int Draw(int width, int startLine = 0)
+        public override int Draw(int width, int startLine = 0)
         {
             lastDrawnTop = Console.CursorTop;
             int cursorOffset = lastDrawnLeft = Console.CursorLeft;
@@ -603,7 +630,7 @@ namespace ToSTextClient
                 Console.CursorTop++;
                 Console.CursorLeft = cursorOffset;
             }
-            while (startLine++ <= minimumHeight)
+            while (++startLine < minimumHeight)
             {
                 Console.Write("".PadRight(width));
                 Console.CursorTop++;
@@ -611,22 +638,44 @@ namespace ToSTextClient
             }
             return lastWrittenLines = GetFullHeight();
         }
+    }
 
-        public RedrawResult Redraw(int width)
+    class WillView : View
+    {
+        private const int WILL_WIDTH = 40;
+        private const int WILL_HEIGHT = 18;
+
+        public string Title { get; set; }
+        public string Value { get; set; }
+
+        public WillView() : base(WILL_WIDTH, WILL_HEIGHT + 1) => Title = Value = "";
+
+        public override int GetFullHeight() => minimumHeight;
+
+        public override int Draw(int width, int startLine = 0)
         {
-            if (lastWrittenLines != GetFullHeight()) return RedrawResult.HEIGHT_CHANGED;
-            Console.CursorTop = lastDrawnTop;
-            Console.CursorLeft = lastDrawnLeft;
-            int written = lastWrittenLines;
-            Draw(width, lastStartLine);
-            int cursorOffset = Console.CursorLeft;
-            while (lastWrittenLines < written--)
+            lastDrawnTop = Console.CursorTop;
+            int cursorOffset = lastDrawnLeft = Console.CursorLeft;
+            lastStartLine = startLine;
+            if (startLine == GetFullHeight()) return lastWrittenLines = 0;
+            Console.Write(Title.Length > width ? Title.Substring(0, width) : Title.PadRight(width));
+            Console.CursorTop++;
+            Console.CursorLeft = cursorOffset;
+            int lineIndex = 0;
+            foreach (string line in Value.Split('\r').SelectMany(s => s.Wrap(width)))
+            {
+                if (lineIndex++ < startLine) continue;
+                Console.Write(line.PadRight(width));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
+            while (++lineIndex < minimumHeight)
             {
                 Console.Write("".PadRight(width));
                 Console.CursorTop++;
                 Console.CursorLeft = cursorOffset;
             }
-            return RedrawResult.SUCCESS;
+            return lastWrittenLines = minimumHeight;
         }
     }
 

@@ -106,8 +106,9 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.USER_LEFT_GAME:
                     ServerMessageParsers.USER_LEFT_GAME.Build(buffer, index, length).Parse(out bool update).Parse(out display).Parse(out playerID);
-                    if (display) UI.AppendLine("{0} has left the game {1}", GameState.ToName(playerID), update);
-                    // TODO: Update player list.
+                    if (display) UI.AppendLine("{0} has left the game", GameState.ToName(playerID));
+                    if (update) GameState.RemovePlayer(playerID);
+                    GameState.Players[(int)playerID].Left = true;
                     break;
                 case ServerMessageType.CHAT_BOX_MESSAGE:
                     playerID = PlayerID.JAILOR;
@@ -147,7 +148,7 @@ namespace ToSTextClient
                     UI.AppendLine("Please do not spam the chat");
                     break;
                 case ServerMessageType.HOW_MANY_PLAYERS_AND_GAMES:
-                    ServerMessageParsers.HOW_MANY_PLAYERS_AND_GAMES.Build(buffer, index, length).Parse(out uint activeGames).Parse(out uint onlinePlayers);
+                    ServerMessageParsers.HOW_MANY_PLAYERS_AND_GAMES.Build(buffer, index, length).Parse(out uint onlinePlayers).Parse(out uint activeGames);
                     UI.AppendLine("There are currently {0} players online and {1} games being played", onlinePlayers, activeGames);
                     break;
                 case ServerMessageType.SYSTEM_MESSAGE:
@@ -446,7 +447,6 @@ namespace ToSTextClient
                     {
                         RootParser root = parser.Parse(out string will);
                         GameState.Players[(int)playerID].LastWill = will;
-                        // TODO: Display last will
                         return root;
                     }, parser =>
                     {
@@ -471,14 +471,16 @@ namespace ToSTextClient
                     GameState.Players[(int)playerID].LastWill = lastWill;
                     break;
                 case ServerMessageType.SOMEONE_HAS_WON:
+                    List<PlayerID> winners = new List<PlayerID>();
                     RepeatParser<Parser<PlayerID, RootParser>, RootParser> winnerParser = ServerMessageParsers.SOMEONE_HAS_WON.Build(buffer, index, length).Parse(out FactionID factionID);
-                    UI.AppendLine("Winning faction: {0}", factionID.ToString().ToDisplayName());
                     winnerParser.Parse(p =>
                     {
                         RootParser root = p.Parse(out playerID);
-                        UI.AppendLine("\t{0}", GameState.ToName(playerID));
+                        winners.Add(playerID);
                         return root;
                     }, out _);
+                    UI.AppendLine(winners.Count > 0 ? "Winning faction: {0} ({1})" : "Winning faction: {0}", factionID.ToString().ToDisplayName(), string.Join(", ", winners.Select(p => GameState.ToName(p))));
+                    if (winners.Contains(GameState.Self)) UI.AppendLine("You have won");
                     break;
                 case ServerMessageType.MAFIOSO_PROMOTED_TO_GODFATHER:
                     UI.AppendLine("You have been promoted to Godfather");
@@ -520,7 +522,6 @@ namespace ToSTextClient
                 case ServerMessageType.DEATH_NOTE:
                     ServerMessageParsers.DEATH_NOTE.Build(buffer, index, length).Parse(out playerID).Parse(out _).Parse(out string deathNote);
                     GameState.Players[(int)playerID].DeathNote = deathNote;
-                    // TODO: Display death note
                     break;
                 // Add missing cases here
                 case ServerMessageType.RESURRECTION_SET_ALIVE:
@@ -533,6 +534,7 @@ namespace ToSTextClient
                 case ServerMessageType.USER_LEFT_DURING_SELECTION:
                     ServerMessageParsers.USER_LEFT_DURING_SELECTION.Build(buffer, index, length).Parse(out playerID);
                     UI.AppendLine("{0} left during selection", GameState.ToName(playerID));
+                    GameState.Players[(int)playerID].Left = true;
                     break;
                 case ServerMessageType.VIGILANTE_KILLED_TOWN:
                     UI.AppendLine("You put your gun away out of fear of shooting another town member");
@@ -548,13 +550,13 @@ namespace ToSTextClient
                     switch (pmType)
                     {
                         case PrivateMessageType.TO:
-                            UI.AppendLine("To {0}: {1}", playerID, message);
+                            UI.AppendLine("To {0}: {1}", GameState.ToName(playerID), message);
                             break;
                         case PrivateMessageType.FROM:
-                            UI.AppendLine("From {0}: {1}", playerID, message);
+                            UI.AppendLine("From {0}: {1}", GameState.ToName(playerID), message);
                             break;
                         case PrivateMessageType.FROM_TO:
-                            UI.AppendLine("From {0} to {1}: {2}", playerID, receiverID, message);
+                            UI.AppendLine("From {0} to {1}: {2}", GameState.ToName(playerID), GameState.ToName(receiverID), message);
                             break;
                     }
                     break;
@@ -764,6 +766,16 @@ namespace ToSTextClient
                 case RoleID.COVEN_MAFIA_DECEPTION:
                     return true;
             }
+        }
+
+        public static IEnumerable<string> Wrap(this string value, int lineWidth)
+        {
+            while (value.Length > lineWidth)
+            {
+                yield return value.Substring(0, lineWidth);
+                value = value.Substring(lineWidth);
+            }
+            yield return value;
         }
     }
 }
