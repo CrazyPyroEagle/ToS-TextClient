@@ -47,6 +47,21 @@ namespace ToSTextClient
             get { return _HostID; }
             set { _HostID = value; game.UI.RedrawView(game.UI.PlayerListView); }
         }
+        public string LastWill
+        {
+            get { return _LastWill; }
+            set { game.Parser.SaveLastWill(_LastWill = value); }
+        }
+        public string DeathNote
+        {
+            get { return _DeathNote; }
+            set { game.Parser.SaveDeathNote(_DeathNote = value); }
+        }
+        public string ForgedWill
+        {
+            get { return _ForgedWill; }
+            set { game.Parser.SaveForgedWill(_ForgedWill = value); }
+        }
 
         protected TextClient game;
         protected RoleID _Role;
@@ -55,6 +70,9 @@ namespace ToSTextClient
         protected int _Night;
         protected bool _Host;
         protected PlayerID? _HostID;
+        protected string _LastWill = "";
+        protected string _DeathNote = "";
+        protected string _ForgedWill = "";
 
         public GameState(TextClient game, GameModeID gameMode)
         {

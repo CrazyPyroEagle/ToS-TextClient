@@ -16,6 +16,7 @@ namespace ToSTextClient
 
         void SetMainView(IView view);
         void OpenSideView(IView view);
+        void CloseSideView(IView view);
         void RedrawView(params IView[] views);
         void RedrawMainView();
         void RedrawSideViews();
