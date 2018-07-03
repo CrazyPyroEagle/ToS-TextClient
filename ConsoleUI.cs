@@ -118,6 +118,10 @@ namespace ToSTextClient
                                 helpView.AppendLine("Join a lobby for [Game Mode]");
                                 helpView.AppendLine("  /quit");
                                 helpView.AppendLine("Exit the game");
+                                helpView.AppendLine("  /open [View]");
+                                helpView.AppendLine("Open the [View] view");
+                                helpView.AppendLine("  /close [View]");
+                                helpView.AppendLine("Close the [View] view");
                                 helpView.AppendLine("  /redraw");
                                 helpView.AppendLine("Redraw the whole screen");
                                 OpenSideView(helpView);
@@ -127,9 +131,20 @@ namespace ToSTextClient
                                 if (Enum.TryParse(string.Join("_", cmd, 1, cmd.Length - 1).ToUpper(), out GameModeID gameMode) && game.ActiveGameModes.Contains(gameMode)) game.Parser.JoinLobby(gameMode);
                                 else StatusLine = string.Format("Cannot join game mode: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
                             }
-                            else if (cmdn == "quit")
+                            else if (cmdn == "quit") return;
+                            else if (cmdn == "open")
                             {
-                                return;
+                                cmdn = cmd[1].ToLower();
+                                if (cmdn == "help") OpenSideView(helpView);
+                                else if (cmdn == "modes") OpenSideView(GameModeView);
+                                else StatusLine = string.Format("View not found: {0}", cmd[1]);
+                            }
+                            else if (cmdn == "close")
+                            {
+                                cmdn = cmd[1].ToLower();
+                                if (cmdn == "help") CloseSideView(helpView);
+                                else if (cmdn == "modes") CloseSideView(GameModeView);
+                                else StatusLine = string.Format("View not found: {0}", cmd[1]);
                             }
                             else if (cmdn == "redraw") RedrawAll();
                         }
@@ -191,6 +206,10 @@ namespace ToSTextClient
                                 helpView.AppendLine("Set your execute reason to [Reason]");
                                 helpView.AppendLine("  /report [ID] [Reason] <Message>");
                                 helpView.AppendLine("Report [ID] for [Reason]");
+                                helpView.AppendLine("  /open [View]");
+                                helpView.AppendLine("Open the [View] view");
+                                helpView.AppendLine("  /close [View]");
+                                helpView.AppendLine("Close the [View] view");
                                 helpView.AppendLine("  /redraw");
                                 helpView.AppendLine("Redraw the whole screen");
                                 OpenSideView(helpView);
@@ -331,6 +350,26 @@ namespace ToSTextClient
                                 game.Parser.ReportPlayer(player, reason, string.Join(" ", cmd, 3, cmd.Length - 3));
                                 GameView.AppendLine("Reported {0} for {1}", game.GameState.ToName(player), reason.ToString().ToLower().Replace('_', ' '));
                             }
+                            else if (cmdn == "open")
+                            {
+                                cmdn = cmd[1].ToLower();
+                                if (cmdn == "help") OpenSideView(helpView);
+                                else if (cmdn == "players") OpenSideView(PlayerListView);
+                                else if (cmdn == "graveyard") OpenSideView(GraveyardView);
+                                else if (cmdn == "team") OpenSideView(TeamView);
+                                else if (cmdn == "lw" || cmdn == "dn") OpenSideView(LastWillView);
+                                else StatusLine = string.Format("View not found: {0}", cmd[1]);
+                            }
+                            else if (cmdn == "close")
+                            {
+                                cmdn = cmd[1].ToLower();
+                                if (cmdn == "help") CloseSideView(helpView);
+                                else if (cmdn == "players") CloseSideView(PlayerListView);
+                                else if (cmdn == "graveyard") CloseSideView(GraveyardView);
+                                else if (cmdn == "team") CloseSideView(TeamView);
+                                else if (cmdn == "lw" || cmdn == "dn") CloseSideView(LastWillView);
+                                else StatusLine = string.Format("View not found: {0}", cmd[1]);
+                            }
                             else if (cmdn == "redraw") RedrawAll();
                         }
                         catch (Exception e)
@@ -465,6 +504,9 @@ namespace ToSTextClient
                 int cw = consoleWidth ?? Console.BufferWidth - 1;
                 if (sideViews.Count > 0)
                 {
+                    int maxMinWidth = 0;
+                    foreach (AbstractView view in sideViews) maxMinWidth = Math.Max(view.GetMinimumWidth(), maxMinWidth);
+                    if (maxMinWidth != sideWidth) RedrawAll();
                     if (sideViews.Where(v => v.GetMinimumWidth() > sideWidth).Any())
                     {
                         RedrawAll();
@@ -509,6 +551,11 @@ namespace ToSTextClient
                         Console.CursorLeft = cw - 1;
                         Console.WriteLine();
                     }
+                }
+                else if (sideWidth > 0)
+                {
+                    RedrawAll();
+                    return;
                 }
                 ResetCursor();
             }
