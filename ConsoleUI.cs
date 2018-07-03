@@ -124,7 +124,7 @@ namespace ToSTextClient
                             }
                             else if (cmdn == "join")
                             {
-                                if (Enum.TryParse(string.Join(" ", cmd, 1, cmd.Length - 1).ToUpper(), out GameModeID gameMode) && game.ActiveGameModes.Contains(gameMode)) game.Parser.JoinLobby(gameMode);
+                                if (Enum.TryParse(string.Join("_", cmd, 1, cmd.Length - 1).ToUpper(), out GameModeID gameMode) && game.ActiveGameModes.Contains(gameMode)) game.Parser.JoinLobby(gameMode);
                                 else StatusLine = string.Format("Cannot join game mode: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
                             }
                             else if (cmdn == "quit")
@@ -355,7 +355,7 @@ namespace ToSTextClient
             lock (drawLock)
             {
                 if (mainView == view) return;
-                if (view == GameView) commandMode = false;
+                commandMode = view != GameView;
                 willContext = null;
                 mainView = view;
                 sideViews = hiddenSideViews.SafeIndex(view, () => new List<AbstractView>());

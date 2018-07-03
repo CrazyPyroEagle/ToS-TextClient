@@ -157,7 +157,7 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.STRING_TABLE_MESSAGE:
                     ServerMessageParsers.STRING_TABLE_MESSAGE.Build(buffer, index, length).Parse(out LocalizationTableID tableMessage);
-                    UI.GameView.AppendLine(tableMessage.ToString().ToDisplayName());     // TODO: Write the localized message instead of the name
+                    UI.GameView.AppendLine(tableMessage.ToEnglish());     // TODO: Write the localized message instead of the name
                     break;
                 // Add missing cases here
                 case ServerMessageType.USER_INFORMATION:
@@ -252,7 +252,7 @@ namespace ToSTextClient
                     break;
                 // Add missing cases here
                 case ServerMessageType.USER_JOINING_LOBBY_TOO_QUICKLY_MESSAGE:
-                    UI.HomeView.ReplaceLine(3, "Wait 15 seconds before rejoining");
+                    UI.StatusLine = "Wait 15 seconds before rejoining";
                     break;
                 // Add missing cases here
                 case ServerMessageType.PICK_NAMES:
@@ -345,7 +345,7 @@ namespace ToSTextClient
                 case ServerMessageType.USER_CHOSEN_NAME:
                     ServerMessageParsers.USER_CHOSEN_NAME.Build(buffer, index, length).Parse(out tableMessage).Parse(out playerID).Parse(out name);
                     GameState.Players[(int)playerID].Name = name;
-                    UI.GameView.AppendLine("{0} ({1})", tableMessage.ToString().ToDisplayName(), GameState.ToName(playerID));
+                    UI.GameView.AppendLine(tableMessage.ToEnglish(), GameState.ToName(playerID));
                     break;
                 case ServerMessageType.OTHER_MAFIA:
                     GameState.Team.Clear();
@@ -632,6 +632,10 @@ namespace ToSTextClient
                     UI.HomeView.ReplaceLine(0, "Disconnected: {0}", dcReason);
                     UI.RedrawView(UI.HomeView);
                     break;
+                case ServerMessageType.SPY_NIGHT_INFO:
+                    ServerMessageParsers.SPY_NIGHT_INFO.Build(buffer, index, length).Parse(out tableMessage);
+                    UI.GameView.AppendLine("Target saw message: {0}", tableMessage.ToString().ToDisplayName());
+                    break;
                 // Add missing cases here
             }
         }
@@ -761,6 +765,253 @@ namespace ToSTextClient
                 value = value.Substring(lineWidth);
             }
             yield return value;
+        }
+
+        public static string ToEnglish(this LocalizationTableID id)
+        {
+            switch (id)
+            {
+                case LocalizationTableID.SHERIFF_TARGET_MEMBER_OF_MAFIA:
+                    return "Your target is a member of the mafia!";
+                case LocalizationTableID.SHERIFF_TARGET_NOT_SUSPICIOUS:
+                    return "Your target is not suspicious";
+                case LocalizationTableID.SHERIFF_TARGET_MEMBER_OF_CULT:
+                    return "Your target is a member of the cult!";
+                case LocalizationTableID.SHERIFF_TARGET_SERIAL_KILLER:
+                    return "Your target is a Serial Killer!";
+                case LocalizationTableID.EXECUTED_BY_JAILOR:
+                    return "You were executed by the Jailor!";
+                case LocalizationTableID.TRANSPORTED_BUT_JAILED:
+                    return "Someone tried to transport you but you were in jail";
+                case LocalizationTableID.TRANSPORTED:
+                    return "You were transported to another location";
+                case LocalizationTableID.ROLE_BLOCKED_BUT_JAILED:
+                    return "Someone tried to role block you but you were in jail";
+                case LocalizationTableID.ROLE_BLOCKED:
+                    return "Someone occupied your night. You were role blocked!";
+                case LocalizationTableID.BLACKMAILED_BUT_JAILED:
+                    return "Someone tried to blackmail you but you were in jail";
+                case LocalizationTableID.BLACKMAILED:
+                    return "Someone threatened to reveal your secrets. You are blackmailed!";
+                case LocalizationTableID.DOUSED_BUT_JAILED:
+                    return "Someone tried to douse you in gas but you were in jail";
+                case LocalizationTableID.DOUSED:
+                    return "You were doused in gas!";
+                case LocalizationTableID.ATTACKED_BUT_JAILED:
+                    return "Someone tried to attack you but you were in jail";
+                case LocalizationTableID.ATTACKED_BUT_BODYGUARD_PROTECTED:
+                    return "You were attacked but someone fought off your attacker!";
+                case LocalizationTableID.ATTACKED_BUT_HEALED:
+                    return "You were attacked but someone nursed you back to health!";
+                case LocalizationTableID.ATTACKED_BY_MAFIA:
+                    return "You were attacked by a member of the Mafia!";
+                case LocalizationTableID.ATTACKED_BY_SERIAL_KILLER:
+                    return "You were attacked by a Serial Killer!";
+                case LocalizationTableID.SHOT_BY_VIGILANTE:
+                    return "You were shot by a Vigilante!";
+                case LocalizationTableID.IGNITED_BY_ARSONIST:
+                    return "You were set on fire by an Arsonist!";
+                case LocalizationTableID.SHOT_BY_VETERAN:
+                    return "You were shot by the Veteran you visited!";
+                case LocalizationTableID.KILLED_PROTECTING:
+                    return "You were killed protecting your target!";
+                case LocalizationTableID.TARGET_ATTACKED:
+                    return "Your target was attacked last night!";
+                case LocalizationTableID.DOUSED_BUT_BODYGUARD_PROTECTED:
+                    return "An Arsonist tried to douse you in gas but a Bodyguard fought off your attacker!";
+                case LocalizationTableID.MURDERED_BY_VISITED_SERIAL_KILLER:
+                    return "You were murdered by the Serial Killer you visited!";
+                case LocalizationTableID.TARGET_IS_FRAMER:
+                    return "Your target has a desire to deceive. They must be a Framer!";
+                case LocalizationTableID.INVESTIGATOR_TARGET_IS_ESCORT:
+                    return "Your target could be an Escort, Transporter, or Consort";
+                case LocalizationTableID.INVESTIGATOR_TARGET_IS_DOCTOR:
+                    return "Your target could be a Doctor, Disguiser, or Serial Killer";
+                case LocalizationTableID.INVESTIGATOR_TARGET_IS_INVESTIGATOR:
+                    return "Your target could be an Investigator, Consigliere, or Mayor";
+                case LocalizationTableID.TARGET_IS_MYSTERY_ROLE:
+                    return "Your target is the Mystery role!";
+                case LocalizationTableID.INVESTIGATOR_TARGET_IS_BODYGUARD:
+                    return "Your target could be a Bodyguard, Godfather, or Arsonist";
+                case LocalizationTableID.INVESTIGATOR_TARGET_IS_VIGILANTE:
+                    return "Your target could be a Vigilante, Veteran, or Mafioso";
+                case LocalizationTableID.INVESTIGATOR_TARGET_IS_MEDIUM:
+                    return "Your target could be a Medium, Janitor, or Retributionist";
+                case LocalizationTableID.INVESTIGATOR_TARGET_IS_SURVIVOR:
+                    return "Your target could be a Survivor, Vampire Hunter, or Amnesiac";
+                case LocalizationTableID.INVESTIGATOR_TARGET_IS_SPY:
+                    return "Your target could be a Spy, Blackmailer, or Jailor";
+                case LocalizationTableID.INVESTIGATOR_TARGET_IS_SHERIFF:
+                    return "Your target could be a Sheriff, Executioner, or Werewolf";
+                case LocalizationTableID.UNUSED:
+                    return "UNUSED";
+                case LocalizationTableID.INVESTIGATOR_TARGET_IS_FRAMER:
+                    return "Your target could be a Framer, Vampire, or Jester";
+                case LocalizationTableID.INVESTIGATOR_TARGET_IS_LOOKOUT:
+                    return "Your target could be a Lookout, Forger, or Witch";
+                case LocalizationTableID.ATTACKED_BY_BODYGUARD_BUT_HEALED:
+                    return "A Bodyguard attacked you but someone nursed you back to health!";
+                case LocalizationTableID.ATTACKED_BY_BODYGUARD_BUT_BODYGUARD_PROTECTED:
+                    return "A Bodyguard attacked you but someone fought off your attacker!";
+                case LocalizationTableID.KILLED_BY_BODYGUARD:
+                    return "You were killed by a Bodyguard!";
+                case LocalizationTableID.ATTACKED_BUT_DEFENSE_TOO_STRONG:
+                    return "Someone attacked you but your defense was too strong!";
+                case LocalizationTableID.TRANSPORTER_TARGET_JAILED:
+                    return "One of your targets was jailed so you could not transport them!";
+                case LocalizationTableID.TARGET_IS_BODYGUARD:
+                    return "Your target is a trained protector: they must be a Bodyguard";
+                case LocalizationTableID.TARGET_IS_TRANSPORTER:
+                    return "Your target specializes in transportation: they must be a Transporter";
+                case LocalizationTableID.TARGET_IS_DOCTOR:
+                    return "Your target is a professional surgeon: they must be a Doctor";
+                case LocalizationTableID.TARGET_IS_ESCORT:
+                    return "Your target is a beautiful person working for the town: they must be an Escort";
+                case LocalizationTableID.TARGET_IS_INVESTIGATOR:
+                    return "Your target gathers information about people: they must be an Investigator";
+                case LocalizationTableID.TARGET_IS_JAILOR:
+                    return "Your target detains people at night: they must be a Jailor";
+                case LocalizationTableID.TARGET_IS_LOOKOUT:
+                    return "Your target watches who visits people at night: they must be a Lookout";
+                case LocalizationTableID.TARGET_IS_MASON:
+                    return "Your target is a member of a secret town organization: they must be a Mason";
+                case LocalizationTableID.TARGET_IS_MASON_LEADER:
+                    return "Your target is the leader of a secret town organization: they must be a Mason Leader";
+                case LocalizationTableID.TARGET_IS_MAYOR:
+                    return "Your target is the leader of the town: they must be the Mayor";
+                case LocalizationTableID.TARGET_IS_SHERIFF:
+                    return "Your target is a protector of the town: they must be a Sheriff";
+                case LocalizationTableID.TARGET_IS_SPY:
+                    return "Your target secretly watches who someone visits: they must be a Spy";
+                case LocalizationTableID.TARGET_IS_VETERAN:
+                    return "Your target is a paranoid war hero: they must be a Veteran";
+                case LocalizationTableID.TARGET_IS_VIGILANTE:
+                    return "Your target will bend the law to enact justice: they must be a Vigilante";
+                case LocalizationTableID.TARGET_IS_MEDIUM:
+                    return "Your target speaks with the dead: they must be a Medium";
+                case LocalizationTableID.TARGET_IS_RETRIBUTIONIST:
+                    return "Your target wields mystical powers: they must be a Retributionist";
+                case LocalizationTableID.TARGET_IS_BLACKMAILER:
+                    return "Your target uses information to silence people: they must be a Blackmailer";
+                case LocalizationTableID.TARGET_IS_CONSIGLIERE:
+                    return "Your target gathers information for the Mafia: they must be a Consigliere";
+                case LocalizationTableID.TARGET_IS_CONSORT:
+                    return "Your target is a beautiful person working for the Mafia: they must be a Consort";
+                case LocalizationTableID.TARGET_IS_DISGUISER:
+                    return "Your target pretends to be other people: they must be a Disguiser";
+                case LocalizationTableID.TARGET_IS_FORGER:
+                    return "Your target is good at forging documents: they must be a Forger";
+                case LocalizationTableID.TARGET_IS_GODFATHER:
+                    return "Your target is the leader of the Mafia: they must be the Godfather";
+                case LocalizationTableID.TARGET_IS_JANITOR:
+                    return "Your target cleans up dead bodies: they must be a Janitor";
+                case LocalizationTableID.TARGET_IS_MAFIOSO:
+                    return "Your target does the Godfather's dirty work: they must be a Mafioso";
+                case LocalizationTableID.TARGET_IS_AMNESIAC:
+                    return "Your target does not remember their role: they must be an Amnesiac";
+                case LocalizationTableID.TARGET_IS_ARSONIST:
+                    return "Your target likes to watch things burn: they must be an Arsonist";
+                case LocalizationTableID.TARGET_IS_CULTIST:
+                    return "Your target is a member of an evil secret organization: they must be a Cultist";
+                case LocalizationTableID.TARGET_IS_EXECUTIONER:
+                    return "Your target wants someone to be lynched at any cost: they must be an Executioner";
+                case LocalizationTableID.TARGET_IS_JESTER:
+                    return "Your target wants to be lynched: they must be a Jester";
+                case LocalizationTableID.TARGET_IS_SERIAL_KILLER:
+                    return "Your target wants to kill everyone: they must be a Serial Killer";
+                case LocalizationTableID.TARGET_IS_SURVIVOR:
+                    return "Your target simply wants to live: they must be a Survivor";
+                case LocalizationTableID.TARGET_IS_WITCH:
+                    return "Your target casts spells on people: they must be a Witch";
+                case LocalizationTableID.WITCH_TARGET_JAILED:
+                    return "Your target was jailed so you could not control them";
+                case LocalizationTableID.ROLEBLOCKED_BUT_IMMUNE:
+                    return "Someone tried to role block you but you are immune!";
+                case LocalizationTableID.CONTROLLED_BY_WITCH:
+                    return "You feel a mystical power dominating you. You were controlled by a Witch!";
+                case LocalizationTableID.CONTROLLED_BY_WITCH_BUT_IMMUNE:
+                    return "A Witch tried to control you but you are immune";
+                case LocalizationTableID.CONTROLLED_BUT_JAILED:
+                    return "Someone tried to control you but you were jailed";
+                case LocalizationTableID.JOINED_THE_TOWN:
+                    return "{0} has joined the Town";
+                case LocalizationTableID.ATTEMPTED_TO_REMEMBER:
+                    return "You have attempted to remember who you were!";
+                case LocalizationTableID.HAUNTED_BY_JESTER:
+                    return "You were haunted by the Jester. You committed suicide over the guilt!";
+                case LocalizationTableID.ATTACKED_BUT_VESTED:
+                    return "You were attacked but your bulletproof vest saved you!";
+                case LocalizationTableID.SHOT_VISITOR:
+                    return "You shot someone who visited you last night!";
+                case LocalizationTableID.ATTACKED_BUT_ALERT_DEFENSE_TOO_STRONG:
+                    return "Someone tried to attack you but your defense while on alert was too strong!";
+                case LocalizationTableID.HAUNTED_BY_JESTER_BUT_HEALED:
+                    return "You were haunted by the Jester. You tried to commit suicide but someone healed you!";
+                case LocalizationTableID.VIGILANTE_SUICIDE:
+                    return "You could not get over the guilt of killing a town member. You shot yourself!";
+                case LocalizationTableID.ATTACKED_ROLE_BLOCKER:
+                    return "Someone role blocked you, so you attacked them!";
+                case LocalizationTableID.ORDERED_BY_GODFATHER:
+                    return "The Godfather has ordered you to kill his target";
+                case LocalizationTableID.CANNOT_RESURRECT_DISCONNECTED:
+                    return "You cannot resurrect a user who has left the game";
+                case LocalizationTableID.CLEANED_GASOLINE_OFF:
+                    return "You have cleaned the gasoline off of yourself";
+                case LocalizationTableID.JAILOR_DECIDED_TO_EXECUTE:
+                    return "The Jailor has decided to execute you";
+                case LocalizationTableID.JAILOR_CHANGED_MIND:
+                    return "The Jailor has changed his mind";
+                case LocalizationTableID.KILLED_BY_JAILED_SERIAL_KILLER:
+                    return "You were killed by the Serial Killer you jailed";
+                case LocalizationTableID.ATTACKED_JAILOR:
+                    return "You attacked the Jailor!";
+                case LocalizationTableID.TARGET_DEFENSE_TOO_STRONG:
+                    return "Your target's defense was too strong to kill";
+                case LocalizationTableID.LYNCHED_JESTER:
+                    return "The Jester will get his revenge from the grave!";
+                case LocalizationTableID.JESTER_RANDOM_TARGET_CHOSEN:
+                    return "You did not select a target so one was chosen at random";
+                case LocalizationTableID.FULL_MOON:
+                    return "There is a full moon out tonight";
+                case LocalizationTableID.ATTACKED_SOMEONE:
+                    return "You attacked someone";
+                case LocalizationTableID.SHERIFF_TARGET_IS_WEREWOLF:
+                    return "Your target is a Werewolf!";
+                case LocalizationTableID.ATTACKED_BY_WEREWOLF:
+                    return "You were attacked by a Werewolf!";
+                case LocalizationTableID.TURNED_INTO_WEREWOLF:
+                    return "The light of the full moon has transformed you into a rampaging Werewolf!";
+                case LocalizationTableID.ROLE_BLOCKED_SO_STAYED_AT_HOME:
+                    return "Someone role blocked you so you stayed at home";
+                case LocalizationTableID.TARGET_IS_WEREWOLF:
+                    return "Your target howls at the moon: they must be a Werewolf";
+                case LocalizationTableID.DID_NOT_PERFORM_DAY_ABILITY:
+                    return "You did not perform your day ability";
+                case LocalizationTableID.DID_NOT_PERFORM_NIGHT_ABILITY:
+                    return "You did not perform your night ability";
+                case LocalizationTableID.STAKED_BY_VAMPIRE_HUNTER:
+                    return "You were staked by a Vampire Hunter!";
+                case LocalizationTableID.STAKED_BY_VISITED_VAMPIRE_HUNTER:
+                    return "You were staked by the Vampire Hunter you visited!";
+                case LocalizationTableID.STAKED_ATTACKING_VAMPIRE:
+                    return "You staked the Vampire who attacked you!";
+                case LocalizationTableID.TARGET_IS_VAMPIRE_HUNTER:
+                    return "Your target tracks Vampires: they must be a Vampire Hunter";
+                case LocalizationTableID.TARGET_IS_VAMPIRE:
+                    return "Your target drinks blood: they must be a Vampire";
+                case LocalizationTableID.ATTACKED_BY_VAMPIRE:
+                    return "You were attacked by a Vampire!";
+                case LocalizationTableID.CANNOT_WHISPER_REVEALED_MAYOR:
+                    return "You can't whisper to a revealed Mayor";
+                case LocalizationTableID.MAYOR_CANNOT_WHISPER_WHEN_REVEALED:
+                    return "You can't whisper once you have revealed as the Mayor";
+                case LocalizationTableID.MAFIA_SOMEONE_IS_LISTENING:
+                    return "You feel that someone can hear your conversations";
+                case LocalizationTableID.MAFIA_NOBODY_IS_LISTENING:
+                    return "You feel like you can speak privately";
+                // Add missing cases here
+            }
+            return id.ToString().ToDisplayName();
         }
     }
 }
