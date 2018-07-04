@@ -29,12 +29,33 @@ namespace ToSTextClient
         public IList<PetID> OwnedPets { get; set; } = new List<PetID>();
         public IList<LobbyIconID> OwnedLobbyIcons { get; set; } = new List<LobbyIconID>();
         public IList<DeathAnimationID> OwnedDeathAnimations { get; set; } = new List<DeathAnimationID>();
-        public GameState GameState { get; set; }
-        public TextUI UI { get; set; }
+        public GameState GameState
+        {
+            get => _GameState;
+            set
+            {
+                if (value != null)
+                {
+                    _GameState = value;
+                    UI.GameView.Clear();
+                    UI.CommandContext = CommandContext.LOBBY;
+                    UI.SetMainView(UI.GameView);
+                    UI.GameView.AppendLine("Joined a lobby for {0}", value.GameMode.ToString().ToDisplayName());
+                }
+                else
+                {
+                    UI.CommandContext = CommandContext.HOME;
+                    UI.SetMainView(UI.HomeView);
+                    _GameState = value;
+                }
+            }
+        }
+        public ITextUI UI { get; set; }
         public MessageParser Parser { get; protected set; }
 
         private Socket socket;
         private byte[] buffer;
+        private GameState _GameState;
 
         static void Main(string[] args)
         {
@@ -68,7 +89,86 @@ namespace ToSTextClient
             buffer = new byte[4096];
             Parser = new MessageParser(ParseMessage, (buffer, index, length) => socket.Send(buffer, index, length, SocketFlags.None));
             Parser.Authenticate(AuthenticationModeID.BMG_FORUMS, true, BUILD_NUMBER, user, encpw);
-            UI = new ConsoleUI(this);
+            UI = new ConsoleUI(this)
+            {
+                CommandContext = CommandContext.AUTHENTICATING
+            };
+            UI.RegisterCommand(new Command("[Game Mode]", "Join a lobby for [Game Mode]", CommandContext.HOME, cmd =>
+            {
+                if (Enum.TryParse(string.Join("_", cmd, 1, cmd.Length - 1).ToUpper(), out GameModeID gameMode) && ActiveGameModes.Contains(gameMode)) Parser.JoinLobby(gameMode);
+                else UI.StatusLine = string.Format("Cannot join game mode: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+            }), "join");
+            UI.RegisterCommand(new Command("", "Exit the game", CommandContext.AUTHENTICATING | CommandContext.HOME, cmd => UI.RunInput = false), "quit", "exit");
+            UI.RegisterCommand(new Command("", "Leave the game", CommandContext.LOBBY | CommandContext.GAME, cmd => Parser.LeaveGame()), "leave");
+            UI.RegisterCommand(new Command("", "Leave the post-game lobby", CommandContext.POST_GAME, cmd => Parser.LeavePostGameLobby()), "leavepost");
+            UI.RegisterCommand(new Command("", "Vote to repick the host", CommandContext.LOBBY, cmd => Parser.VoteToRepickHost()), "repick");
+            UI.RegisterCommand(new Command("[Role]", "Add [Role] to the role list", CommandContext.HOST, cmd =>
+            {
+                if (Enum.TryParse(string.Join("_", cmd, 1, cmd.Length - 1).ToUpper(), out RoleID role))
+                {
+                    Parser.ClickedOnAddButton(role);
+                    GameState.AddRole(role);
+                }
+                else UI.StatusLine = string.Format("Invalid role: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+            }), "add");
+            UI.RegisterCommand(new Command("[Position]", "Remove [Position] from the role list", CommandContext.HOST, cmd =>
+            {
+                if (byte.TryParse(cmd[1], out byte slot))
+                {
+                    Parser.ClickedOnRemoveButton(--slot);
+                    GameState.RemoveRole(slot);
+                }
+                else UI.StatusLine = string.Format("Invalid slot number: {0}", cmd[1]);
+            }), "remove");
+            UI.RegisterCommand(new Command("", "Force the game to start", CommandContext.HOST, cmd => Parser.ClickedOnStartButton()));
+            UI.RegisterCommand(new Command("[Name]", "Set your name to [Name]", CommandContext.PICK_NAMES, cmd => Parser.ChooseName(string.Join(" ", cmd, 1, cmd.Length - 1))), "n", "name");
+            UI.RegisterCommand(new Command("[Player]", "Set your target to [Player]", CommandContext.NIGHT, cmd =>
+            {
+                int index = 1;
+                if (GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
+                {
+                    Parser.SetTarget(target);
+                    if (GameState.Role.IsMafia()) Parser.SetTargetMafiaOrWitch(target, target == PlayerID.JAILOR ? TargetType.CANCEL_TARGET_1 : TargetType.SET_TARGET_1);
+                    UI.GameView.AppendLine(target == PlayerID.JAILOR ? "Unset target" : "Set target to {0}", GameState.ToName(target));
+                }
+                else UI.StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+            }), "t", "target");
+            UI.RegisterCommand(new Command("[Player]", "Set your second target to [Player]", CommandContext.NIGHT, cmd =>
+            {
+                int index = 1;
+                if (GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
+                {
+                    Parser.SetSecondTarget(target);
+                    if (GameState.Role.IsMafia()) Parser.SetTargetMafiaOrWitch(target, target == PlayerID.JAILOR ? TargetType.CANCEL_TARGET_2 : TargetType.SET_TARGET_2);
+                    UI.GameView.AppendLine(target == PlayerID.JAILOR ? "Unset secondary target" : "Set secondary target to {0}", GameState.ToName(target));
+                }
+                else UI.StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+            }), "t2", "target2");
+            UI.RegisterCommand(new Command("[Player]", "Set your day choice to [Player]", CommandContext.DAY, cmd =>
+            {
+
+                int index = 1;
+                if (GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
+                {
+                    Parser.SetDayChoice(target);
+                    UI.GameView.AppendLine(target == PlayerID.JAILOR ? "Unset day target" : "Set day target to {0}", GameState.ToName(target));
+                }
+                else UI.StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+            }), "td", "targetday");
+            UI.RegisterCommand(new Command("[Player]", "Vote [Player] up to the stand", CommandContext.VOTING, cmd =>
+            {
+                int index = 1;
+                if (GameState.TryParsePlayer(cmd, ref index, out PlayerID target)) Parser.SetVote(target);
+                else UI.StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+            }), "v", "vote");
+            UI.RegisterCommand(new Command("", "Vote guilty", CommandContext.JUDGEMENT, cmd => Parser.JudgementVoteGuilty()), "g", "guilty");
+            UI.RegisterCommand(new Command("", "Vote innocent", CommandContext.JUDGEMENT, cmd => Parser.JudgementVoteInnocent()), "i", "innocent");
+            UI.RegisterCommand(new Command("[Player] <Message>", "Whisper <Message> to [Player]", CommandContext.DAY, cmd =>
+            {
+                int index = 1;
+                if (GameState.TryParsePlayer(cmd, ref index, out PlayerID target, false)) Parser.SendPrivateMessage(target, string.Join(" ", cmd, index, cmd.Length - index));
+                else UI.StatusLine = "Player not found";
+            }), "w", "pm", "whisper");
             UI.HomeView.ReplaceLine(0, "Authenticating...");
             UI.RedrawView(UI.HomeView);
             QueueReceive();
@@ -81,34 +181,27 @@ namespace ToSTextClient
             {
                 case ServerMessageType.AUTHENTICATED:
                     ServerMessageParsers.AUTHENTICATED.Build(buffer, index, length).Parse(out bool registered);
-                    if (!registered) UI.HomeView.ReplaceLine(0, "Authentication failed: registration required");
-                    else UI.HomeView.ReplaceLine(0, "Authenticated. Loading user information...");
+                    if (registered)
+                    {
+                        UI.CommandContext = (UI.CommandContext & ~CommandContext.AUTHENTICATING) | CommandContext.HOME;
+                        UI.HomeView.ReplaceLine(0, "Authenticated. Loading user information...");
+                    }
+                    else UI.HomeView.ReplaceLine(0, "Authentication failed: registration required");
                     break;
                 case ServerMessageType.CREATE_LOBBY:
                     ServerMessageParsers.CREATE_LOBBY.Build(buffer, index, length).Parse(out bool host).Parse(out GameModeID gameMode);
-                    GameState = new GameState(this, gameMode);
-                    GameState.Host = host;
-                    UI.GameView.Clear();
-                    UI.SetMainView(UI.GameView);
-                    UI.GameView.AppendLine("Joined a lobby for {0}", gameMode.ToString().ToDisplayName());
+                    GameState = new GameState(this, gameMode) { Host = host };
                     break;
                 case ServerMessageType.SET_HOST:
                     GameState.Host = true;
                     break;
                 case ServerMessageType.USER_JOINED_GAME:
                     ServerMessageParsers.USER_JOINED_GAME.Build(buffer, index, length).Parse(out host).Parse(out bool display).Parse(out string username).Parse(out PlayerID playerID).Parse(out LobbyIconID lobbyIconID);
-                    if (display) UI.GameView.AppendLine("{0} has joined the game", username);
-                    if (host) GameState.HostID = playerID;
-                    GameState.PlayerCount++;
-                    PlayerState playerState = GameState.Players[(int)playerID];
-                    playerState.Name = username;
-                    playerState.SelectedLobbyIcon = lobbyIconID;
+                    GameState.AddPlayer(playerID, host, display, username, lobbyIconID);
                     break;
                 case ServerMessageType.USER_LEFT_GAME:
                     ServerMessageParsers.USER_LEFT_GAME.Build(buffer, index, length).Parse(out bool update).Parse(out display).Parse(out playerID);
-                    if (display) UI.GameView.AppendLine("{0} has left the game", GameState.ToName(playerID));
-                    if (update) GameState.RemovePlayer(playerID);
-                    else GameState.Players[(int)playerID].Left = true;
+                    GameState.RemovePlayer(playerID, update, display);
                     break;
                 case ServerMessageType.CHAT_BOX_MESSAGE:
                     playerID = PlayerID.JAILOR;
@@ -157,7 +250,7 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.STRING_TABLE_MESSAGE:
                     ServerMessageParsers.STRING_TABLE_MESSAGE.Build(buffer, index, length).Parse(out LocalizationTableID tableMessage);
-                    UI.GameView.AppendLine(tableMessage.ToEnglish());     // TODO: Write the localized message instead of the name
+                    UI.GameView.AppendLine(tableMessage.ToEnglish());
                     break;
                 // Add missing cases here
                 case ServerMessageType.USER_INFORMATION:
@@ -166,10 +259,10 @@ namespace ToSTextClient
                     break;
                 // Add missing cases here
                 case ServerMessageType.FORCED_LOGOUT:
+                    UI.CommandContext = CommandContext.AUTHENTICATING;
                     UI.StatusLine = "Forcefully disconnected";
                     break;
                 case ServerMessageType.RETURN_TO_HOME_PAGE:
-                    UI.SetMainView(UI.HomeView);
                     GameState = null;
                     break;
                 // Add missing cases here
@@ -257,9 +350,7 @@ namespace ToSTextClient
                 // Add missing cases here
                 case ServerMessageType.PICK_NAMES:
                     ServerMessageParsers.PICK_NAMES.Build(buffer, index, length).Parse(out byte playerCount);
-                    GameState.PlayerCount = playerCount;
-                    GameState.OnStart();
-                    UI.GameView.AppendLine("Please choose a name (or wait to get a random name)");
+                    GameState.OnStart(playerCount);
                     break;
                 case ServerMessageType.NAMES_AND_POSITIONS_OF_USERS:
                     ServerMessageParsers.NAMES_AND_POSITIONS_OF_USERS.Build(buffer, index, length).Parse(out playerID).Parse(out string name);
@@ -285,7 +376,7 @@ namespace ToSTextClient
                         causes.Add(id);
                         return root;
                     }, out int count);
-                    playerState = GameState.Players[(int)playerID];
+                    PlayerState playerState = GameState.Players[(int)playerID];
                     playerState.Role = roleID;
                     playerState.Dead = true;
                     if (causes.Count > 0) UI.GameView.AppendLine("Death causes: {0}", string.Join(", ", causes.Select(dc => dc.ToString().ToDisplayName())));
@@ -297,21 +388,25 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.START_VOTING:
                     ServerMessageParsers.START_VOTING.Build(buffer, index, length).Parse(out bool hideVotesNeeded);
-                    if (!hideVotesNeeded) UI.GameView.AppendLine("{0} votes are needed to lynch someone", (GameState.Players.Where(ps => !ps.Dead).Count() + 1) / 2);
+                    UI.CommandContext |= CommandContext.VOTING;
+                    if (!hideVotesNeeded) UI.GameView.AppendLine("{0} votes are needed to lynch someone", (GameState.Players.Where(ps => !ps.Dead && !ps.Left).Count() + 1) / 2);
                     break;
                 case ServerMessageType.START_DEFENSE_TRANSITION:
                     ServerMessageParsers.START_DEFENSE_TRANSITION.Build(buffer, index, length).Parse(out playerID);
                     UI.GameView.AppendLine("{0} has been voted up to the stand", GameState.ToName(playerID));
                     break;
                 case ServerMessageType.START_JUDGEMENT:
+                    UI.CommandContext = (UI.CommandContext & ~CommandContext.VOTING) | CommandContext.JUDGEMENT;
                     UI.GameView.AppendLine("You may now vote guilty or innocent");
                     break;
                 case ServerMessageType.TRIAL_FOUND_GUILTY:
                     ServerMessageParsers.TRIAL_FOUND_GUILTY.Build(buffer, index, length).Parse(out byte guiltyVotes).Parse(out byte innocentVotes);
+                    UI.CommandContext &= ~CommandContext.JUDGEMENT;
                     UI.GameView.AppendLine("Judgement results: {0} guilty - {1} innocent", guiltyVotes, innocentVotes);
                     break;
                 case ServerMessageType.TRIAL_FOUND_NOT_GUILTY:
                     ServerMessageParsers.TRIAL_FOUND_NOT_GUILTY.Build(buffer, index, length).Parse(out guiltyVotes).Parse(out innocentVotes);
+                    UI.CommandContext = (UI.CommandContext & ~CommandContext.JUDGEMENT) | CommandContext.VOTING;
                     UI.GameView.AppendLine("Judgement results: {0} guilty - {1} innocent", guiltyVotes, innocentVotes);
                     break;
                 case ServerMessageType.LOOKOUT_NIGHT_ABILITY_MESSAGE:
@@ -505,6 +600,9 @@ namespace ToSTextClient
                     ServerMessageParsers.INVALID_NAME_MESSAGE.Build(buffer, index, length).Parse(out InvalidNameStatus invalidNameStatus);
                     UI.StatusLine = string.Format("Invalid name: {0}", invalidNameStatus);
                     break;
+                case ServerMessageType.START_NIGHT_TRANSITION:
+                    UI.CommandContext &= ~CommandContext.VOTING;
+                    break;
                 // Add missing cases here
                 case ServerMessageType.DEATH_NOTE:
                     ServerMessageParsers.DEATH_NOTE.Build(buffer, index, length).Parse(out playerID).Parse(out _).Parse(out string deathNote);
@@ -571,6 +669,11 @@ namespace ToSTextClient
                     UI.GameView.AppendLine("There is a full moon out tonight");
                     break;
                 // Add missing cases here
+                case ServerMessageType.END_GAME_INFO:
+                    UI.CommandContext = CommandContext.POST_GAME;
+                    UI.GameView.AppendLine("Entered the post-game lobby");
+                    break;
+                // Add missing cases here
                 case ServerMessageType.VAMPIRE_PROMOTION:
                     UI.GameView.AppendLine("You have been bitten by a Vampire");        // TODO: Check if I should set role here.
                     break;
@@ -630,13 +733,12 @@ namespace ToSTextClient
                 case ServerMessageType.DISCONNECTED:
                     ServerMessageParsers.DISCONNECTED.Build(buffer, index, length).Parse(out DisconnectReasonID dcReason);
                     UI.HomeView.ReplaceLine(0, "Disconnected: {0}", dcReason);
-                    UI.RedrawView(UI.HomeView);
                     break;
                 case ServerMessageType.SPY_NIGHT_INFO:
                     ServerMessageParsers.SPY_NIGHT_INFO.Build(buffer, index, length).Parse(out tableMessage);
                     UI.GameView.AppendLine("Target saw message: {0}", tableMessage.ToString().ToDisplayName());
                     break;
-                // Add missing cases here
+                    // Add missing cases here
             }
         }
 
@@ -1013,5 +1115,9 @@ namespace ToSTextClient
             }
             return id.ToString().ToDisplayName();
         }
+
+        public static string[] SplitCommand(this string input) => input.Split(' ');
+
+        public static string PadRightHard(this string value, int length) => value.Length > length ? value.Substring(0, length) : value.PadRight(length);
     }
 }

@@ -7,59 +7,62 @@ namespace ToSTextClient
 {
     class GameState
     {
-        public TextUI UI { get { return game.UI; } }
+        public ITextUI UI => game.UI;
         public GameModeID GameMode { get; protected set; }
         public bool Started { get; protected set; }
         public RoleID Role
         {
-            get { return _Role; }
-            set { game.UI.GameView.AppendLine("Your role is {0}", (_Role = value).ToString().ToDisplayName()); }
+            get => _Role;
+            set { game.UI.CommandContext &= ~CommandContext.PICK_NAMES; game.UI.GameView.AppendLine("Your role is {0}", (_Role = value).ToString().ToDisplayName()); }
         }
         public PlayerID Self { get; set; }
-        public PlayerID Target
-        {
-            get { return _Target; }
-            set { game.UI.GameView.AppendLine("Your target is {0}", ToName(_Target = value)); }
-        }
+        public PlayerID Target { get => _Target; set => game.UI.GameView.AppendLine("Your target is {0}", ToName(_Target = value)); }
         public PlayerState[] Players { get; protected set; } = new PlayerState[15];
         public RoleID[] Roles { get; protected set; } = new RoleID[0];
         public List<PlayerState> Team { get; set; } = new List<PlayerState>();
         public List<PlayerState> Graveyard { get; set; } = new List<PlayerState>();
-        public int PlayerCount { get; set; }
         public int Day
         {
-            get { return _Day; }
-            set { game.UI.GameView.AppendLine("Day {0}", _Day = value); }
+            get => _Day;
+            set
+            {
+                game.UI.CommandContext = (game.UI.CommandContext & ~CommandContext.NIGHT) | CommandContext.DAY;
+                game.UI.GameView.AppendLine("Day {0}", _Day = value);
+            }
         }
         public int Night
         {
-            get { return _Night; }
-            set { game.UI.GameView.AppendLine("Night {0}", _Night = value); }
+            get => _Night;
+            set
+            {
+                game.UI.CommandContext = (game.UI.CommandContext & ~CommandContext.DAY) | CommandContext.NIGHT;
+                game.UI.GameView.AppendLine("Night {0}", _Night = value);
+            }
         }
         public int AbilitiesLeft { get; set; }
         public bool Host
         {
-            get { return _Host; }
-            set { if (_Host != value) game.UI.GameView.AppendLine((_Host = value) ? "You are now host" : "You are no longer host"); }
+            get => _Host;
+            set { if (_Host != value) { game.UI.SetCommandContext(CommandContext.HOST, _Host = value); game.UI.GameView.AppendLine((_Host = value) ? "You are now host" : "You are no longer host"); } }
         }
         public PlayerID? HostID
         {
-            get { return _HostID; }
+            get => _HostID;
             set { _HostID = value; game.UI.RedrawView(game.UI.PlayerListView); }
         }
         public string LastWill
         {
-            get { return _LastWill; }
+            get => _LastWill;
             set { game.Parser.SaveLastWill(_LastWill = value); }
         }
         public string DeathNote
         {
-            get { return _DeathNote; }
+            get => _DeathNote;
             set { game.Parser.SaveDeathNote(_DeathNote = value); }
         }
         public string ForgedWill
         {
-            get { return _ForgedWill; }
+            get => _ForgedWill;
             set { game.Parser.SaveForgedWill(_ForgedWill = value); }
         }
 
@@ -81,25 +84,41 @@ namespace ToSTextClient
             PopulatePlayers();
         }
 
-        public void OnStart()
+        public void OnStart(int playerCount)
         {
             Started = true;
-            Players = new PlayerState[PlayerCount];
-            Roles = new RoleID[PlayerCount];
+            Players = new PlayerState[playerCount];
+            Roles = new RoleID[playerCount];
             PopulatePlayers();
             HostID = null;
+            game.UI.CommandContext = CommandContext.GAME | CommandContext.PICK_NAMES;
             game.UI.RedrawSideViews();
+            game.UI.GameView.AppendLine("Please choose a name (or wait to get a random name)");
         }
 
-        public void RemovePlayer(PlayerID player)
+        public void AddPlayer(PlayerID player, bool host, bool display, string username, LobbyIconID lobbyIcon)
         {
-            for (int index = (int)player + 1; index < Players.Length; index++)
+            if (display) game.UI.GameView.AppendLine("{0} has joined the game", username);
+            if (host) HostID = player;
+            PlayerState playerState = Players[(int)player];
+            playerState.Name = username;
+            playerState.SelectedLobbyIcon = lobbyIcon;
+        }
+
+        public void RemovePlayer(PlayerID player, bool update, bool display)
+        {
+            if (display) game.UI.GameView.AppendLine("{0} has left the game", ToName(player));
+            if (update)
             {
-                Players[index].Self--;
-                Players[index - 1] = Players[index];
+                for (int index = (int)player + 1; index < Players.Length; index++)
+                {
+                    Players[index].Self--;
+                    Players[index - 1] = Players[index];
+                }
+                Players[14] = new PlayerState(this, PlayerID.PLAYER_15);
+                game.UI.RedrawView(game.UI.PlayerListView);
             }
-            Players[14] = new PlayerState(this, PlayerID.PLAYER_15);
-            game.UI.RedrawView(game.UI.PlayerListView);
+            else Players[(int)player].Left = true;
         }
 
         public void AddRole(RoleID role)

@@ -7,7 +7,7 @@ using ToSParser;
 
 namespace ToSTextClient
 {
-    class ConsoleUI : TextUI
+    class ConsoleUI : ITextUI
     {
         protected const string DEFAULT_STATUS = "Type /? for help";
         protected const string DEFAULT_COMMAND_STATUS = "Type ? for help";
@@ -31,6 +31,9 @@ namespace ToSTextClient
         protected string _StatusLine;
         protected EditableWillView willContext;
         protected int inputLength;
+        protected CommandContext _CommandContext;
+        protected Dictionary<string, Command> commands;
+        protected volatile bool _RunInput = true;
 
         public ITextView HomeView { get; protected set; }
         public IListView<GameModeID> GameModeView { get; protected set; }
@@ -42,23 +45,24 @@ namespace ToSTextClient
         public IWillView LastWillView { get; protected set; }
         public string StatusLine
         {
-            get { return _StatusLine; }
-            set
-            {
-                _StatusLine = value;
-                RedrawCursor();
-            }
+            get => _StatusLine;
+            set { _StatusLine = value; RedrawCursor(); }
         }
-        
+        public CommandContext CommandContext { get => _CommandContext; set { _CommandContext = value; RedrawView(helpView); } }
+        public bool RunInput { get => _RunInput; set => _RunInput = value; }
+
         protected EditableWillView myLastWillView;
         protected EditableWillView myDeathNoteView;
         protected EditableWillView myForgedWillView;
-        protected TextView helpView;
+        protected HelpView helpView;
 
         public ConsoleUI(TextClient game)
         {
             this.game = game;
             drawLock = new object();
+            inputBuffer = new StringBuilder();
+            commandMode = true;
+            commands = new Dictionary<string, Command>();
 
             HomeView = new TextView(this, AppendLine, 60, 2);
             GameModeView = new ListView<GameModeID>(" # Game Modes", () => game.ActiveGameModes, gm => gm.ToString().ToDisplayName(), 25);
@@ -71,7 +75,7 @@ namespace ToSTextClient
             myLastWillView = new EditableWillView(" # My Last Will", lw => game.GameState.LastWill = lw);
             myDeathNoteView = new EditableWillView(" # My Death Note", dn => game.GameState.DeathNote = dn);
             myForgedWillView = new EditableWillView(" # My Forged Will", fw => game.GameState.ForgedWill = fw);
-            helpView = new TextView(this, AppendLine, 40, 1);
+            helpView = new HelpView(commands, () => _CommandContext, 40, 1);
 
             mainView = (AbstractView)HomeView;
             sideViews = new List<AbstractView>();
@@ -83,15 +87,107 @@ namespace ToSTextClient
             hiddenSideViews = new Dictionary<AbstractView, List<AbstractView>>();
             hiddenSideViews.Add(mainView, sideViews);
             hiddenSideViews.Add((AbstractView)GameView, gameSideViews);
-            inputBuffer = new StringBuilder();
-            commandMode = true;
+
+            RegisterCommand(new Command("", "View a list of available commands", ~CommandContext.NONE, cmd => OpenSideView(helpView)), "help", "?");
+            RegisterCommand(new Command("[View]", "Open the [View] view", ~CommandContext.NONE, cmd =>
+            {
+                string cmdn = cmd[1].ToLower();
+                if (cmdn == "help") OpenSideView(helpView);
+                else if (cmdn == "modes" && mainView == HomeView) OpenSideView(GameModeView);
+                else if (cmdn == "players" && mainView == GameView) OpenSideView(PlayerListView);
+                else if (cmdn == "graveyard" && mainView == GameView) OpenSideView(GraveyardView);
+                else if (cmdn == "team" && mainView == GameView) OpenSideView(TeamView);
+                else if ((cmdn == "lw" || cmdn == "dn") && mainView == GameView) OpenSideView(LastWillView);
+                else StatusLine = string.Format("View not found in current context: {0}", cmd[1]);
+            }), "open");
+            RegisterCommand(new Command("[View]", "Close the [View] view", ~CommandContext.NONE, cmd =>
+            {
+                string cmdn = cmd[1].ToLower();
+                if (cmdn == "help") CloseSideView(helpView);
+                else if (cmdn == "modes" && mainView == HomeView) CloseSideView(GameModeView);
+                else if (cmdn == "players" && mainView == GameView) CloseSideView(PlayerListView);
+                else if (cmdn == "graveyard" && mainView == GameView) CloseSideView(GraveyardView);
+                else if (cmdn == "team" && mainView == GameView) CloseSideView(TeamView);
+                else if ((cmdn == "lw" || cmdn == "dn") && mainView == GameView) CloseSideView(LastWillView);
+                else StatusLine = string.Format("View not found: {0}", cmd[1]);
+            }), "close");
+            RegisterCommand(new Command("", "Redraw the whole screen", ~CommandContext.NONE, cmd => RedrawAll()), "redraw");
+            RegisterCommand(new Command("<Player>", "Edit your LW or view <Player>'s", CommandContext.GAME, cmd =>
+            {
+                int index = 1;
+                if (cmd.Length == 1)
+                {
+                    OpenSideView(myLastWillView);
+                    willContext = myLastWillView;
+                    RedrawCursor();
+                }
+                else if (game.GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
+                {
+                    PlayerState ps = game.GameState.Players[(int)target];
+                    if (ps.Dead)
+                    {
+                        LastWillView.Title = string.Format(" # (LW) {0}", game.GameState.ToName(target));
+                        LastWillView.Value = ps.LastWill;
+                        OpenSideView(LastWillView);
+                    }
+                    else StatusLine = string.Format("{0} isn't dead, so you can't see their last will", game.GameState.ToName(target));
+                }
+                else StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+            }), "lw", "lastwill");
+            RegisterCommand(new Command("<Player>", "Edit your DN or view <Player>'s", CommandContext.GAME, cmd =>
+            {
+                int index = 1;
+                if (cmd.Length == 1)
+                {
+                    OpenSideView(myDeathNoteView);
+                    willContext = myDeathNoteView;
+                    RedrawCursor();
+                }
+                else if (game.GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
+                {
+                    PlayerState ps = game.GameState.Players[(int)target];
+                    if (ps.Dead)
+                    {
+                        LastWillView.Title = string.Format(" # (DN) {0}", game.GameState.ToName(target));
+                        LastWillView.Value = ps.DeathNote;
+                        OpenSideView(LastWillView);
+                    }
+                    else StatusLine = string.Format("{0} isn't dead, so you can't see their killer's death note", game.GameState.ToName(target));
+                }
+                else StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+            }), "dn", "deathnote");
+            RegisterCommand(new Command("", "Edit your forged will", CommandContext.GAME, cmd =>
+            {
+                OpenSideView(myForgedWillView);
+                willContext = myForgedWillView;
+                RedrawCursor();
+            }), "fw", "forgedwill");
+            RegisterCommand(new Command("[Reason]", "Set your execute reason to [Reason]", CommandContext.GAME, cmd =>
+            {
+                if (Enum.TryParse(string.Join("_", cmd, 1, cmd.Length).ToUpper(), out ExecuteReasonID reason)) game.Parser.SetJailorDeathNote(reason);
+                else StatusLine = string.Format("Reason not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+            }), "jn", "jailornote");
+            RegisterCommand(new Command("[Player] [Reason] <Message>", "Report [Player] for [Reason]", CommandContext.GAME, cmd =>
+            {
+                int index = 1;
+                if (game.GameState.TryParsePlayer(cmd, ref index, out PlayerID player, false))
+                {
+                    if (Enum.TryParse(cmd[index++].ToUpper(), out ReportReasonID reason))
+                    {
+                        game.Parser.ReportPlayer(player, reason, string.Join(" ", cmd, index, cmd.Length - index));
+                        GameView.AppendLine("Reported {0} for {1}", game.GameState.ToName(player), reason.ToString().ToLower().Replace('_', ' '));
+                    }
+                    else StatusLine = string.Format("Reason not found: {0}", cmd[index - 1]);
+                }
+                else StatusLine = "Player not found";
+            }), "report");
         }
 
         public void Run()
         {
             int width = 0;
             int height = 0;
-            while (true)
+            while (_RunInput)
             {
                 try
                 {
@@ -104,281 +200,27 @@ namespace ToSTextClient
                     string input = ReadUserInput();
                     if (input.Length == 0) continue;
                     _StatusLine = null;
-                    if (mainView == HomeView)
+                    if (commandMode)
                     {
-                        string[] cmd = input.Split(' ');
+                        string[] cmd = input.SplitCommand();
                         try
                         {
                             string cmdn = cmd[0].ToLower();
-                            if (cmdn == "?" || cmdn == "help")
+                            if (commands.TryGetValue(cmdn, out Command command))
                             {
-                                helpView.Clear();
-                                helpView.AppendLine(" # Help");
-                                helpView.AppendLine("  /join [Game Mode]");
-                                helpView.AppendLine("Join a lobby for [Game Mode]");
-                                helpView.AppendLine("  /quit");
-                                helpView.AppendLine("Exit the game");
-                                helpView.AppendLine("  /open [View]");
-                                helpView.AppendLine("Open the [View] view");
-                                helpView.AppendLine("  /close [View]");
-                                helpView.AppendLine("Close the [View] view");
-                                helpView.AppendLine("  /redraw");
-                                helpView.AppendLine("Redraw the whole screen");
-                                OpenSideView(helpView);
+                                if ((command.UsableContexts & _CommandContext) != 0) command.Run(cmd);
+                                else StatusLine = string.Format("Command not allowed in the current context: {0}", cmdn);
                             }
-                            else if (cmdn == "join")
-                            {
-                                if (Enum.TryParse(string.Join("_", cmd, 1, cmd.Length - 1).ToUpper(), out GameModeID gameMode) && game.ActiveGameModes.Contains(gameMode)) game.Parser.JoinLobby(gameMode);
-                                else StatusLine = string.Format("Cannot join game mode: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
-                            }
-                            else if (cmdn == "quit") return;
-                            else if (cmdn == "open")
-                            {
-                                cmdn = cmd[1].ToLower();
-                                if (cmdn == "help") OpenSideView(helpView);
-                                else if (cmdn == "modes") OpenSideView(GameModeView);
-                                else StatusLine = string.Format("View not found: {0}", cmd[1]);
-                            }
-                            else if (cmdn == "close")
-                            {
-                                cmdn = cmd[1].ToLower();
-                                if (cmdn == "help") CloseSideView(helpView);
-                                else if (cmdn == "modes") CloseSideView(GameModeView);
-                                else StatusLine = string.Format("View not found: {0}", cmd[1]);
-                            }
-                            else if (cmdn == "redraw") RedrawAll();
+                            else StatusLine = string.Format("Command not found: {0}", cmdn);
                         }
                         catch (Exception e)
                         {
-                            Debug.WriteLine("Failed to parse HomeView command: {0}", (object)input);
+                            Debug.WriteLine("Failed to parse command: {0}", (object)input);
                             Debug.WriteLine(e);
                             StatusLine = string.Format("Failed to parse command: {0}", e.Message);
                         }
                     }
-                    else if (mainView == GameView)
-                    {
-                        if (!commandMode)
-                        {
-                            game.Parser.SendChatBoxMessage(input);
-                            continue;
-                        }
-                        string[] cmd = input.Split(' ');
-                        try
-                        {
-                            string cmdn = cmd[0].ToLower();
-                            if (cmdn == "?" || cmdn == "help")
-                            {
-                                helpView.Clear();
-                                helpView.AppendLine(" # Help");
-                                helpView.AppendLine("  /leave");
-                                helpView.AppendLine("Leave the game");
-                                helpView.AppendLine("  /leavepost");
-                                helpView.AppendLine("Leave the post-game lobby");
-                                helpView.AppendLine("  /repick");
-                                helpView.AppendLine("Vote to repick the host");
-                                helpView.AppendLine("  /add [Role]");
-                                helpView.AppendLine("Add [Role] to the role list");
-                                helpView.AppendLine("  /remove [Position]");
-                                helpView.AppendLine("Remove [Position] from the role list");
-                                helpView.AppendLine("  /start");
-                                helpView.AppendLine("Force the game to start");
-                                helpView.AppendLine("  /n [Name]");
-                                helpView.AppendLine("Set your name to [Name]");
-                                helpView.AppendLine("  /t [Player]");
-                                helpView.AppendLine("Set your target to [Player]");
-                                helpView.AppendLine("  /t2 [Player]");
-                                helpView.AppendLine("Set your second target to [Player]");
-                                helpView.AppendLine("  /v [Player]");
-                                helpView.AppendLine("Vote [Player] up to the stand");
-                                helpView.AppendLine("  /g");
-                                helpView.AppendLine("Vote guilty");
-                                helpView.AppendLine("  /i");
-                                helpView.AppendLine("Vote innocent");
-                                helpView.AppendLine("  /td [Player]");
-                                helpView.AppendLine("Set your day choice to [Player]");
-                                helpView.AppendLine("  /lw <Player>");
-                                helpView.AppendLine("Edit your LW or view <Player>'s");
-                                helpView.AppendLine("  /dn <Player>");
-                                helpView.AppendLine("Edit your DN or view <Player>'s");
-                                helpView.AppendLine("  /fw");
-                                helpView.AppendLine("Edit your forged will");
-                                helpView.AppendLine("  /jn [Reason]");
-                                helpView.AppendLine("Set your execute reason to [Reason]");
-                                helpView.AppendLine("  /report [ID] [Reason] <Message>");
-                                helpView.AppendLine("Report [ID] for [Reason]");
-                                helpView.AppendLine("  /open [View]");
-                                helpView.AppendLine("Open the [View] view");
-                                helpView.AppendLine("  /close [View]");
-                                helpView.AppendLine("Close the [View] view");
-                                helpView.AppendLine("  /redraw");
-                                helpView.AppendLine("Redraw the whole screen");
-                                OpenSideView(helpView);
-                            }
-                            else if (cmdn == "leave") game.Parser.LeaveGame();
-                            else if (cmdn == "leavepost") game.Parser.LeavePostGameLobby();
-                            else if (cmdn == "repick") game.Parser.VoteToRepickHost();
-                            else if (cmdn == "add")
-                            {
-                                if (Enum.TryParse(string.Join("_", cmd, 1, cmd.Length - 1).ToUpper(), out RoleID role))
-                                {
-                                    game.Parser.ClickedOnAddButton(role);
-                                    game.GameState.AddRole(role);
-                                }
-                                else StatusLine = string.Format("Invalid role: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
-                            }
-                            else if (cmdn == "remove")
-                            {
-                                if (byte.TryParse(cmd[1], out byte slot))
-                                {
-                                    game.Parser.ClickedOnRemoveButton(--slot);
-                                    game.GameState.RemoveRole(slot);
-                                }
-                                else StatusLine = string.Format("Invalid slot number: {0}", cmd[1]);
-                            }
-                            else if (cmdn == "start") game.Parser.ClickedOnStartButton();
-                            else if (cmdn == "n") game.Parser.ChooseName(string.Join(" ", cmd, 1, cmd.Length - 1));
-                            else if (cmdn == "t")
-                            {
-                                int index = 1;
-                                if (game.GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
-                                {
-                                    game.Parser.SetTarget(target);
-                                    if (game.GameState.Role.IsMafia()) game.Parser.SetTargetMafiaOrWitch(target, target == PlayerID.JAILOR ? TargetType.CANCEL_TARGET_1 : TargetType.SET_TARGET_1);
-                                    GameView.AppendLine(target == PlayerID.JAILOR ? "Unset target" : "Set target to {0}", game.GameState.ToName(target));
-                                }
-                                else StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
-                            }
-                            else if (cmdn == "t2")
-                            {
-                                int index = 1;
-                                if (game.GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
-                                {
-                                    game.Parser.SetSecondTarget(target);
-                                    if (game.GameState.Role.IsMafia()) game.Parser.SetTargetMafiaOrWitch(target, target == PlayerID.JAILOR ? TargetType.CANCEL_TARGET_2 : TargetType.SET_TARGET_2);
-                                    GameView.AppendLine(target == PlayerID.JAILOR ? "Unset secondary target" : "Set secondary target to {0}", game.GameState.ToName(target));
-                                }
-                                else StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
-                            }
-                            else if (cmdn == "v")
-                            {
-                                int index = 1;
-                                if (game.GameState.TryParsePlayer(cmd, ref index, out PlayerID target)) game.Parser.SetVote(target);
-                                else StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
-                            }
-                            else if (cmdn == "g") game.Parser.JudgementVoteGuilty();
-                            else if (cmdn == "i") game.Parser.JudgementVoteInnocent();
-                            else if (cmdn == "w")
-                            {
-                                int index = 1;
-                                if (game.GameState.TryParsePlayer(cmd, ref index, out PlayerID target, false)) game.Parser.SendPrivateMessage(target, string.Join(" ", cmd, index, cmd.Length - index));
-                                else StatusLine = "Player not found";
-                            }
-                            else if (cmdn == "td")
-                            {
-                                int index = 1;
-                                if (game.GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
-                                {
-                                    game.Parser.SetDayChoice(target);
-                                    GameView.AppendLine(target == PlayerID.JAILOR ? "Unset day target" : "Set day target to {0}", game.GameState.ToName(target));
-                                }
-                                else StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
-                            }
-                            else if (cmdn == "lw")
-                            {
-                                int index = 1;
-                                if (cmd.Length == 1)
-                                {
-                                    OpenSideView(myLastWillView);
-                                    willContext = myLastWillView;
-                                    RedrawCursor();
-                                }
-                                else if (game.GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
-                                {
-                                    PlayerState ps = game.GameState.Players[(int)target];
-                                    if (!ps.Dead)
-                                    {
-                                        StatusLine = string.Format("{0} isn't dead, so you can't see their last will", game.GameState.ToName(target));
-                                        continue;
-                                    }
-                                    LastWillView.Title = string.Format(" # (LW) {0}", game.GameState.ToName(target));
-                                    LastWillView.Value = ps.LastWill;
-                                    OpenSideView(LastWillView);
-                                }
-                                else StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
-                            }
-                            else if (cmdn == "dn")
-                            {
-                                int index = 1;
-                                if (cmd.Length == 1)
-                                {
-                                    OpenSideView(myDeathNoteView);
-                                    willContext = myDeathNoteView;
-                                    RedrawCursor();
-                                }
-                                else if (game.GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
-                                {
-                                    PlayerState ps = game.GameState.Players[(int)target];
-                                    if (!ps.Dead)
-                                    {
-                                        StatusLine = string.Format("{0} isn't dead, so you can't see their killer's death note", game.GameState.ToName(target));
-                                        continue;
-                                    }
-                                    LastWillView.Title = string.Format(" # (DN) {0}", game.GameState.ToName(target));
-                                    LastWillView.Value = ps.DeathNote;
-                                    OpenSideView(LastWillView);
-                                }
-                                else StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
-                            }
-                            else if (cmdn == "fw")
-                            {
-                                OpenSideView(myForgedWillView);
-                                willContext = myForgedWillView;
-                                RedrawCursor();
-                            }
-                            else if (cmdn == "jn")
-                            {
-                                if (Enum.TryParse(string.Join("_", cmd, 1, cmd.Length).ToUpper(), out ExecuteReasonID reason))
-                                {
-                                    game.Parser.SetJailorDeathNote(reason);
-                                }
-                                else StatusLine = string.Format("Reason not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
-                            }
-                            else if (cmdn == "report")
-                            {
-                                PlayerID player = (PlayerID)(byte.Parse(cmd[1]) - 1u);
-                                ReportReasonID reason = (ReportReasonID)Enum.Parse(typeof(ReportReasonID), cmd[2].ToUpper());
-                                game.Parser.ReportPlayer(player, reason, string.Join(" ", cmd, 3, cmd.Length - 3));
-                                GameView.AppendLine("Reported {0} for {1}", game.GameState.ToName(player), reason.ToString().ToLower().Replace('_', ' '));
-                            }
-                            else if (cmdn == "open")
-                            {
-                                cmdn = cmd[1].ToLower();
-                                if (cmdn == "help") OpenSideView(helpView);
-                                else if (cmdn == "players") OpenSideView(PlayerListView);
-                                else if (cmdn == "graveyard") OpenSideView(GraveyardView);
-                                else if (cmdn == "team") OpenSideView(TeamView);
-                                else if (cmdn == "lw" || cmdn == "dn") OpenSideView(LastWillView);
-                                else StatusLine = string.Format("View not found: {0}", cmd[1]);
-                            }
-                            else if (cmdn == "close")
-                            {
-                                cmdn = cmd[1].ToLower();
-                                if (cmdn == "help") CloseSideView(helpView);
-                                else if (cmdn == "players") CloseSideView(PlayerListView);
-                                else if (cmdn == "graveyard") CloseSideView(GraveyardView);
-                                else if (cmdn == "team") CloseSideView(TeamView);
-                                else if (cmdn == "lw" || cmdn == "dn") CloseSideView(LastWillView);
-                                else StatusLine = string.Format("View not found: {0}", cmd[1]);
-                            }
-                            else if (cmdn == "redraw") RedrawAll();
-                        }
-                        catch (Exception e)
-                        {
-                            Debug.WriteLine("Failed to parse GameView command: {0}", (object)input);
-                            Debug.WriteLine(e);
-                            StatusLine = string.Format("Failed to parse command: {0}", e.Message);
-                        }
-                    }
+                    else game.Parser.SendChatBoxMessage(input);
                 }
                 catch (Exception e)
                 {
@@ -386,6 +228,18 @@ namespace ToSTextClient
                     Debug.WriteLine(e);
                 }
             }
+        }
+
+        public void RegisterCommand(Command command, params string[] names)
+        {
+            foreach (string name in names) commands.Add(name, command);
+            RedrawView(helpView);
+        }
+
+        public void SetCommandContext(CommandContext context, bool value)
+        {
+            if (value) CommandContext |= context;
+            else CommandContext &= ~context;
         }
 
         public void SetMainView(IView iview)
@@ -427,6 +281,7 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
+                Console.CursorVisible = false;
                 if (views.Where(v => v == mainView).Any()) RedrawMainView();
                 RedrawSideView(views.Where(sideViews.Contains).ToArray());
             }
@@ -437,19 +292,23 @@ namespace ToSTextClient
 
         protected void RedrawCursor()
         {
-            Console.CursorTop = cursorTop;
-            Console.CursorLeft = 0;
-            Console.Write(commandMode ? "/ " : "> ");
-            string line = willContext != null ? EDITING_STATUS : inputBuffer.Length == 0 ? _StatusLine ?? (commandMode ? DEFAULT_COMMAND_STATUS : DEFAULT_STATUS) : inputBuffer.ToString();
-            Console.Write(line.PadRight(inputLength));
-            inputLength = line.Length;
-            ResetCursor();
+            lock (drawLock)
+            {
+                Console.CursorTop = cursorTop;
+                Console.CursorLeft = 0;
+                Console.Write(commandMode ? "/ " : "> ");
+                string line = willContext != null ? EDITING_STATUS : inputBuffer.Length == 0 ? _StatusLine ?? (commandMode ? DEFAULT_COMMAND_STATUS : DEFAULT_STATUS) : inputBuffer.ToString();
+                Console.Write(line.PadRight(inputLength));
+                inputLength = line.Length;
+                ResetCursor();
+            }
         }
 
         protected void RedrawMainView(int? consoleWidth = null)
         {
             lock (drawLock)
             {
+                Console.CursorVisible = false;
                 if (mainWidth < mainView.GetMinimumWidth())
                 {
                     RedrawAll();
@@ -478,6 +337,7 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
+                Console.CursorVisible = false;
                 foreach (IView iview in views)
                 {
                     AbstractView view = iview as AbstractView;
@@ -500,6 +360,7 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
+                Console.CursorVisible = false;
                 int sideHeight = 0, lastSideHeight = 0;
                 int cw = consoleWidth ?? Console.BufferWidth - 1;
                 if (sideViews.Count > 0)
@@ -565,6 +426,7 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
+                Console.CursorVisible = false;
                 Console.Clear();
                 sideWidth = 0;
                 foreach (AbstractView view in sideViews) sideWidth = Math.Max(sideWidth, view.GetMinimumWidth());
@@ -582,6 +444,7 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
+                Console.CursorVisible = false;
                 int lineIndex = view.Lines.Count;
                 view.Lines.Add(text);
                 if (view != mainView) return;
@@ -594,7 +457,6 @@ namespace ToSTextClient
                 {
                     cursorTop = newCursorTop;
                     RedrawCursor();
-                    //RedrawSideViews();
                     int targetHeight = cursorTop - textHeight + sideStart + 1;
                     Console.MoveBufferArea(mainWidth, sideStart, sideWidth + 1, textHeight - sideStart - 1, mainWidth, targetHeight);
                     for (; sideStart < targetHeight; sideStart++)
@@ -617,6 +479,7 @@ namespace ToSTextClient
             }
             Console.CursorTop = cursorTop;
             Console.CursorLeft = bufferIndex + 2;
+            Console.CursorVisible = true;
         }
 
         protected string ReadUserInput()
@@ -636,10 +499,12 @@ namespace ToSTextClient
             bufferIndex = 0;
             do
             {
+                Console.CursorVisible = true;
                 key = Console.ReadKey(true);
                 lock (drawLock)
                 {
                     ResetCursor();
+                    Console.CursorVisible = false;
                     switch (key.Key)
                     {
                         default:
@@ -701,7 +566,7 @@ namespace ToSTextClient
                             if (willContext != null)
                             {
                                 willContext.Value.Insert(willContext.CursorIndex++, '\r');
-                                ResetCursor();
+                                RedrawView(willContext);
                                 break;
                             }
                             break;
@@ -859,10 +724,10 @@ namespace ToSTextClient
     {
         public List<string> Lines { get; protected set; } = new List<string>();
 
-        protected TextUI ui;
+        protected ITextUI ui;
         protected Action<TextView, string> append;
 
-        public TextView(TextUI ui, Action<TextView, string> append, int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight)
+        public TextView(ITextUI ui, Action<TextView, string> append, int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight)
         {
             this.ui = ui;
             this.append = append;
@@ -893,7 +758,7 @@ namespace ToSTextClient
             int cursorOffset = Console.CursorLeft;
             for (; startLine < Lines.Count; startLine++)
             {
-                Console.Write(Lines[startLine].Length > width ? Lines[startLine].Substring(0, width) : Lines[startLine].PadRight(width));
+                Console.Write(Lines[startLine].PadRightHard(width));
                 Console.CursorTop++;
                 Console.CursorLeft = cursorOffset;
             }
@@ -927,14 +792,14 @@ namespace ToSTextClient
         {
             int cursorOffset = Console.CursorLeft;
             if (startLine == GetFullHeight()) return 0;
-            Console.Write(Title.Length > width ? Title.Substring(0, width) : Title.PadRight(width));
+            Console.Write(Title.PadRightHard(width));
             Console.CursorTop++;
             Console.CursorLeft = cursorOffset;
             IList<T> list = this.list();
             for (; startLine < list.Count; startLine++)
             {
                 string line = map(list[startLine]);
-                Console.Write(line.Length > width ? line.Substring(0, width) : line.PadRight(width));
+                Console.Write(line.PadRightHard(width));
                 Console.CursorTop++;
                 Console.CursorLeft = cursorOffset;
             }
@@ -964,7 +829,7 @@ namespace ToSTextClient
         {
             int cursorOffset = Console.CursorLeft;
             if (startLine == GetFullHeight()) return 0;
-            Console.Write(Title.Length > width ? Title.Substring(0, width) : Title.PadRight(width));
+            Console.Write(Title.PadRightHard(width));
             Console.CursorTop++;
             Console.CursorLeft = cursorOffset;
             int lineIndex = 0;
@@ -1157,6 +1022,61 @@ namespace ToSTextClient
                 Console.CursorLeft = cursorOffset;
             }
             return minimumHeight - lastStartLine;
+        }
+    }
+
+    class HelpView : AbstractView
+    {
+        protected readonly Dictionary<string, Command> commands;
+        protected Func<CommandContext> getContext;
+
+        public HelpView(Dictionary<string, Command> commands, Func<CommandContext> getContext, int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight)
+        {
+            this.commands = commands;
+            this.getContext = getContext;
+        }
+
+        public override int GetFullHeight()
+        {
+            CommandContext context = getContext();
+            return commands.Values.Where(c => (c.UsableContexts & context) > 0).Distinct().Count() * 2 + 1;
+        }
+
+        protected override int DrawUnsafe(int width, int startLine = 0)
+        {
+            CommandContext context = getContext();
+            int cursorOffset = Console.CursorLeft;
+            if (startLine == 0)
+            {
+                Console.Write(" # Help".PadRightHard(width));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
+            else startLine--;
+            int lineIndex = 0;
+            foreach (KeyValuePair<string, Command> command in commands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => (c.Value.UsableContexts & context) > 0))
+            {
+                if (++lineIndex > startLine)
+                {
+                    Console.Write(string.Format("  /{0} {1}", command.Key, command.Value.UsageLine).PadRightHard(width));
+                    Console.CursorTop++;
+                    Console.CursorLeft = cursorOffset;
+                }
+                if (++lineIndex > startLine)
+                {
+                    Console.Write(command.Value.Description.PadRightHard(width));
+                    Console.CursorTop++;
+                    Console.CursorLeft = cursorOffset;
+                }
+            }
+            startLine = lineIndex;
+            while (lineIndex++ < minimumHeight)
+            {
+                Console.Write("".PadRight(width));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
+            return startLine - lastStartLine + 1;
         }
     }
 }
