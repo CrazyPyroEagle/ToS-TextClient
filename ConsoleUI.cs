@@ -48,7 +48,7 @@ namespace ToSTextClient
             get => _StatusLine;
             set { _StatusLine = value; RedrawCursor(); }
         }
-        public CommandContext CommandContext { get => _CommandContext; set { _CommandContext = value; RedrawView(helpView); } }
+        public CommandContext CommandContext { get => _CommandContext; set { _CommandContext = value; UpdateCommandMode(); RedrawView(helpView); } }
         public bool RunInput { get => _RunInput; set => _RunInput = value; }
 
         protected EditableWillView myLastWillView;
@@ -248,7 +248,6 @@ namespace ToSTextClient
             lock (drawLock)
             {
                 if (mainView == view) return;
-                commandMode = view != GameView;
                 willContext = null;
                 mainView = view;
                 sideViews = hiddenSideViews.SafeIndex(view, () => new List<AbstractView>());
@@ -482,11 +481,21 @@ namespace ToSTextClient
             Console.CursorVisible = true;
         }
 
+        protected void UpdateCommandMode()
+        {
+            if (CommandContext.HasFlag(CommandContext.AUTHENTICATING) || CommandContext.HasFlag(CommandContext.HOME))
+            {
+                bool oldCommandMode = commandMode;
+                commandMode = true;
+                if (!oldCommandMode) RedrawCursor();
+            }
+        }
+
         protected string ReadUserInput()
         {
             lock (drawLock)
             {
-                if (mainView == GameView) commandMode = false;
+                commandMode = CommandContext.HasFlag(CommandContext.AUTHENTICATING) || CommandContext.HasFlag(CommandContext.HOME);
                 Console.CursorTop = cursorTop;
                 Console.CursorLeft = 0;
                 Console.Write("".PadRight(inputBuffer.Length + 2));
