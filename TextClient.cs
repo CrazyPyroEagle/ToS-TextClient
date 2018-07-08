@@ -40,7 +40,7 @@ namespace ToSTextClient
                     UI.GameView.Clear();
                     UI.CommandContext = CommandContext.LOBBY;
                     UI.SetMainView(UI.GameView);
-                    UI.GameView.AppendLine("Joined a lobby for {0}", value.GameMode.ToString().ToDisplayName());
+                    UI.GameView.AppendLine(("Joined a lobby for {0}", ConsoleColor.Green, ConsoleColor.Black), value.GameMode.ToString().ToDisplayName());
                 }
                 else
                 {
@@ -67,7 +67,6 @@ namespace ToSTextClient
             Console.Write("Password: ");
             SecureString pwrd = ReadPassword();
             Console.WriteLine("(hidden)", pwrd.Length);
-            // TODO: Authentication and user input parsing
             RSA rsa = RSA.Create();
             RSAParameters rsaParams = new RSAParameters();
             rsaParams.Modulus = MODULUS;
@@ -120,7 +119,7 @@ namespace ToSTextClient
                 }
                 else UI.StatusLine = string.Format("Invalid slot number: {0}", cmd[1]);
             }), "remove");
-            UI.RegisterCommand(new Command("", "Force the game to start", CommandContext.HOST, cmd => Parser.ClickedOnStartButton()));
+            UI.RegisterCommand(new Command("", "Force the game to start", CommandContext.HOST, cmd => Parser.ClickedOnStartButton()), "start");
             UI.RegisterCommand(new Command("[Name]", "Set your name to [Name]", CommandContext.PICK_NAMES, cmd => Parser.ChooseName(string.Join(" ", cmd, 1, cmd.Length - 1))), "n", "name");
             UI.RegisterCommand(new Command("[Player]", "Set your target to [Player]", CommandContext.NIGHT, cmd =>
             {
@@ -169,6 +168,16 @@ namespace ToSTextClient
                 if (GameState.TryParsePlayer(cmd, ref index, out PlayerID target, false)) Parser.SendPrivateMessage(target, string.Join(" ", cmd, index, cmd.Length - index));
                 else UI.StatusLine = "Player not found";
             }), "w", "pm", "whisper");
+            UI.RegisterCommand(new Command("[Command] <Parameters>", "Use the [Command] system command", ~CommandContext.NONE, cmd =>
+            {
+                string cmdn = cmd[1].ToLower();
+                if (cmdn == "setrole")     // LOBBY | PICK_NAMES
+                {
+                    if (Enum.TryParse(string.Join("_", cmd, 2, cmd.Length - 2).ToUpper(), out RoleID role)) Parser.SendSystemMessage(SystemCommandID.SET_ROLE, ((byte)role).ToString());
+                    else UI.StatusLine = string.Format("Invalid role: {0}", string.Join(" ", cmd, 2, cmd.Length - 2));
+                }
+                else UI.StatusLine = string.Format("Invalid subcommand: {0}", cmd[1]);
+            }), "system");
             UI.HomeView.ReplaceLine(0, "Authenticating...");
             UI.RedrawView(UI.HomeView);
             QueueReceive();
@@ -176,7 +185,6 @@ namespace ToSTextClient
 
         private void ParseMessage(byte[] buffer, int index, int length)
         {
-            //Console.WriteLine("Received {0}", (ServerMessageType)buffer[index]);
             switch ((ServerMessageType)buffer[index++])
             {
                 case ServerMessageType.AUTHENTICATED:
@@ -184,13 +192,14 @@ namespace ToSTextClient
                     if (registered)
                     {
                         UI.CommandContext = (UI.CommandContext & ~CommandContext.AUTHENTICATING) | CommandContext.HOME;
-                        UI.HomeView.ReplaceLine(0, "Authenticated. Loading user information...");
+                        UI.HomeView.ReplaceLine(0, ("Authenticated. Loading user information...", ConsoleColor.DarkGreen));
                     }
-                    else UI.HomeView.ReplaceLine(0, "Authentication failed: registration required");
+                    else UI.HomeView.ReplaceLine(0, ("Authentication failed: registration required", ConsoleColor.DarkRed));
                     break;
                 case ServerMessageType.CREATE_LOBBY:
                     ServerMessageParsers.CREATE_LOBBY.Build(buffer, index, length).Parse(out bool host).Parse(out GameModeID gameMode);
-                    GameState = new GameState(this, gameMode) { Host = host };
+                    GameState = new GameState(this, gameMode);
+                    GameState.Host = host;
                     break;
                 case ServerMessageType.SET_HOST:
                     GameState.Host = true;
@@ -208,7 +217,7 @@ namespace ToSTextClient
                     string message = null;
                     Func<Parser<PlayerID, Parser<string, RootParser>>, RootParser> map = parser => parser.Parse(out playerID).Parse(out message);
                     ServerMessageParsers.CHAT_BOX_MESSAGE.Build(buffer, index, length).Parse(GameState.Started, map, map);
-                    UI.GameView.AppendLine("{0}: {1}", GameState.ToName(playerID), message);
+                    UI.GameView.AppendLine(("{0}: {1}", playerID <= PlayerID.PLAYER_15 && GameState.Players[(int)playerID].Dead ? ConsoleColor.Gray : ConsoleColor.White, ConsoleColor.Black), GameState.ToName(playerID), message.Replace("\n", "").Replace("\r", ""));
                     break;
                 // Add missing cases here
                 case ServerMessageType.HOST_CLICKED_ON_ADD_BUTTON:
@@ -220,10 +229,12 @@ namespace ToSTextClient
                     GameState.RemoveRole(slotID);
                     break;
                 case ServerMessageType.HOST_CLICKED_ON_START_BUTTON:
-                    UI.GameView.AppendLine("The game will start in 10 seconds");
+                    GameState.Timer = 10;
+                    GameState.TimerText = "Start";
+                    UI.GameView.AppendLine(("The game will start in 10 seconds", ConsoleColor.DarkGreen));
                     break;
                 case ServerMessageType.CANCEL_START_COOLDOWN:
-                    UI.GameView.AppendLine("The start cooldown was cancelled");
+                    UI.GameView.AppendLine(("The start cooldown was cancelled", ConsoleColor.DarkRed));
                     break;
                 case ServerMessageType.ASSIGN_NEW_HOST:
                     ServerMessageParsers.ASSIGN_NEW_HOST.Build(buffer, index, length).Parse(out playerID);
@@ -232,21 +243,21 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.VOTED_TO_REPICK_HOST:
                     ServerMessageParsers.VOTED_TO_REPICK_HOST.Build(buffer, index, length).Parse(out byte votesNeeded);
-                    UI.GameView.AppendLine("{0} votes are needed to repick the host", votesNeeded);
+                    UI.GameView.AppendLine(("{0} votes are needed to repick the host", ConsoleColor.Green, ConsoleColor.Black), votesNeeded);
                     break;
                 case ServerMessageType.NO_LONGER_HOST:
                     GameState.Host = false;
                     break;
                 case ServerMessageType.DO_NOT_SPAM:
-                    UI.GameView.AppendLine("Please do not spam the chat");
+                    UI.GameView.AppendLine(("Please do not spam the chat", ConsoleColor.Green, ConsoleColor.Black));
                     break;
                 case ServerMessageType.HOW_MANY_PLAYERS_AND_GAMES:
                     ServerMessageParsers.HOW_MANY_PLAYERS_AND_GAMES.Build(buffer, index, length).Parse(out uint onlinePlayers).Parse(out uint activeGames);
-                    UI.GameView.AppendLine("There are currently {0} players online and {1} games being played", onlinePlayers, activeGames);
+                    UI.GameView.AppendLine(("There are currently {0} players online and {1} games being played", ConsoleColor.Green, ConsoleColor.Black), onlinePlayers, activeGames);
                     break;
                 case ServerMessageType.SYSTEM_MESSAGE:
                     ServerMessageParsers.SYSTEM_MESSAGE.Build(buffer, index, length).Parse(out message);
-                    UI.GameView.AppendLine("(System) {0}", message);
+                    UI.GameView.AppendLine(("(System) {0}", ConsoleColor.Yellow, ConsoleColor.Black), message);
                     break;
                 case ServerMessageType.STRING_TABLE_MESSAGE:
                     ServerMessageParsers.STRING_TABLE_MESSAGE.Build(buffer, index, length).Parse(out LocalizationTableID tableMessage);
@@ -255,7 +266,7 @@ namespace ToSTextClient
                 // Add missing cases here
                 case ServerMessageType.USER_INFORMATION:
                     ServerMessageParsers.USER_INFORMATION.Build(buffer, index, length).Parse(out username).Parse(out uint townPoints).Parse(out uint meritPoints);
-                    UI.HomeView.ReplaceLine(0, "{0} ({1} TP, {2} MP)", Username = username, TownPoints = townPoints, MeritPoints = meritPoints);
+                    UI.HomeView.ReplaceLine(0, ("{0} ({1} TP, {2} MP)", ConsoleColor.Yellow, ConsoleColor.Black), Username = username, TownPoints = townPoints, MeritPoints = meritPoints);
                     break;
                 // Add missing cases here
                 case ServerMessageType.FORCED_LOGOUT:
@@ -336,12 +347,17 @@ namespace ToSTextClient
                     UI.HomeView.ReplaceLine(3, "You have left the ranked queue");
                     break;
                 case ServerMessageType.ACCEPT_RANKED_POPUP:
-                    UI.HomeView.ReplaceLine(3, "Are you ready for the Ranked game? (10 seconds to reply)");
+                    UI.HomeView.ReplaceLine(3, ("Are you ready for the Ranked game? (10 seconds to reply)", ConsoleColor.Green, ConsoleColor.Black));
                     break;
                 // Add missing cases here
                 case ServerMessageType.RANKED_TIMEOUT_DURATION:
                     ServerMessageParsers.RANKED_TIMEOUT_DURATION.Build(buffer, index, length).Parse(out seconds);
                     UI.StatusLine = string.Format("Timed out for {0} seconds", seconds);
+                    break;
+                // Add missing cases here
+                case ServerMessageType.MODERATOR_MESSAGE:
+                    ServerMessageParsers.MODERATOR_MESSAGE.Build(buffer, index, length).Parse(out ModeratorMessageID modMessageID);
+                    UI.GameView.AppendLine((modMessageID.ToString().ToDisplayName(), ConsoleColor.Yellow, ConsoleColor.Black));
                     break;
                 // Add missing cases here
                 case ServerMessageType.USER_JOINING_LOBBY_TOO_QUICKLY_MESSAGE:
@@ -364,6 +380,7 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.START_NIGHT:
                     GameState.Night++;
+                    GameState.Timer = GameState.GameMode == GameModeID.RAPID_MODE ? 15 : 30;
                     break;
                 case ServerMessageType.START_DAY:
                     GameState.Day++;
@@ -384,53 +401,62 @@ namespace ToSTextClient
                     break;
                 // Add missing cases here
                 case ServerMessageType.START_DISCUSSION:
+                    GameState.Timer = GameState.GameMode == GameModeID.RAPID_MODE ? 15 : 45;
+                    GameState.TimerText = "Discussion";
                     UI.GameView.AppendLine("Discussion may now begin");
                     break;
                 case ServerMessageType.START_VOTING:
-                    ServerMessageParsers.START_VOTING.Build(buffer, index, length).Parse(out bool hideVotesNeeded);
+                    ServerMessageParsers.START_VOTING.Build(buffer, index, length).Parse(out bool hideVotesNeeded);     // TODO: Fix this not parsing correctly after TrialFoundNotGuilty
                     UI.CommandContext |= CommandContext.VOTING;
-                    if (!hideVotesNeeded) UI.GameView.AppendLine("{0} votes are needed to lynch someone", (GameState.Players.Where(ps => !ps.Dead && !ps.Left).Count() + 1) / 2);
+                    GameState.Timer = 30;
+                    GameState.TimerText = "Voting";
+                    if (!hideVotesNeeded) UI.GameView.AppendLine(("{0} votes are needed to lynch someone", ConsoleColor.Green, ConsoleColor.Black), (GameState.Players.Where(ps => !ps.Dead && !ps.Left).Count() + 1) / 2);
                     break;
                 case ServerMessageType.START_DEFENSE_TRANSITION:
                     ServerMessageParsers.START_DEFENSE_TRANSITION.Build(buffer, index, length).Parse(out playerID);
-                    UI.GameView.AppendLine("{0} has been voted up to the stand", GameState.ToName(playerID));
+                    UI.CommandContext &= ~CommandContext.VOTING;
+                    UI.GameView.AppendLine(("{0} has been voted up to the stand", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID));
                     break;
                 case ServerMessageType.START_JUDGEMENT:
-                    UI.CommandContext = (UI.CommandContext & ~CommandContext.VOTING) | CommandContext.JUDGEMENT;
-                    UI.GameView.AppendLine("You may now vote guilty or innocent");
+                    UI.CommandContext |= CommandContext.JUDGEMENT;
+                    GameState.Timer = 20;
+                    GameState.TimerText = "Judgement";
+                    UI.GameView.AppendLine(("You may now vote guilty or innocent", ConsoleColor.Green, ConsoleColor.Black));
                     break;
                 case ServerMessageType.TRIAL_FOUND_GUILTY:
                     ServerMessageParsers.TRIAL_FOUND_GUILTY.Build(buffer, index, length).Parse(out byte guiltyVotes).Parse(out byte innocentVotes);
                     UI.CommandContext &= ~CommandContext.JUDGEMENT;
-                    UI.GameView.AppendLine("Judgement results: {0} guilty - {1} innocent", guiltyVotes, innocentVotes);
+                    GameState.Timer = 5;
+                    GameState.TimerText = "Last Words";
+                    UI.GameView.AppendLine(("Judgement results: {0} guilty - {1} innocent", ConsoleColor.Green, ConsoleColor.Black), guiltyVotes, innocentVotes);
                     break;
                 case ServerMessageType.TRIAL_FOUND_NOT_GUILTY:
                     ServerMessageParsers.TRIAL_FOUND_NOT_GUILTY.Build(buffer, index, length).Parse(out guiltyVotes).Parse(out innocentVotes);
                     UI.CommandContext = (UI.CommandContext & ~CommandContext.JUDGEMENT) | CommandContext.VOTING;
-                    UI.GameView.AppendLine("Judgement results: {0} guilty - {1} innocent", guiltyVotes, innocentVotes);
+                    UI.GameView.AppendLine(("Judgement results: {0} guilty - {1} innocent", ConsoleColor.Green, ConsoleColor.Black), guiltyVotes, innocentVotes);
                     break;
                 case ServerMessageType.LOOKOUT_NIGHT_ABILITY_MESSAGE:
                     ServerMessageParsers.LOOKOUT_NIGHT_ABILITY_MESSAGE.Build(buffer, index, length).Parse(out playerID);
-                    UI.GameView.AppendLine("{0} visited your target", GameState.ToName(playerID));
+                    UI.GameView.AppendLine(("{0} visited your target", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID));
                     break;
                 case ServerMessageType.USER_VOTED:
                     ServerMessageParsers.USER_VOTED.Build(buffer, index, length).Parse(out playerID).Parse(out PlayerID votedID).Parse(out byte voteCount);
-                    UI.GameView.AppendLine("{0} has placed {2} votes against {1}", GameState.ToName(playerID), GameState.ToName(votedID), voteCount);
+                    UI.GameView.AppendLine(("{0} has placed {2} votes against {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID), GameState.ToName(votedID), voteCount);
                     break;
                 case ServerMessageType.USER_CANCELED_VOTE:
                     ServerMessageParsers.USER_CANCELED_VOTE.Build(buffer, index, length).Parse(out playerID).Parse(out votedID).Parse(out voteCount);
-                    UI.GameView.AppendLine("{0} has cancelled their {2} votes against {1}", GameState.ToName(playerID), GameState.ToName(votedID), voteCount);
+                    UI.GameView.AppendLine(("{0} has cancelled their {2} votes against {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID), GameState.ToName(votedID), voteCount);
                     break;
                 case ServerMessageType.USER_CHANGED_VOTE:
                     ServerMessageParsers.USER_CHANGED_VOTE.Build(buffer, index, length).Parse(out playerID).Parse(out votedID).Parse(out _).Parse(out voteCount);
-                    UI.GameView.AppendLine("{0} has changed their {2} votes to be against {1}", GameState.ToName(playerID), GameState.ToName(votedID), voteCount);
+                    UI.GameView.AppendLine(("{0} has changed their {2} votes to be against {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID), GameState.ToName(votedID), voteCount);
                     break;
                 case ServerMessageType.USER_DIED:
-                    UI.GameView.AppendLine("You have died");
+                    UI.GameView.AppendLine(("You have died", ConsoleColor.DarkRed));
                     break;
                 case ServerMessageType.RESURRECTION:
                     ServerMessageParsers.RESURRECTION.Build(buffer, index, length).Parse(out playerID).Parse(out roleID);
-                    UI.GameView.AppendLine("{0} ({1}) has been brought back to life", GameState.ToName(playerID), roleID.ToString().ToDisplayName());
+                    UI.GameView.AppendLine(("{0} ({1}) has been resurrected", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID), roleID.ToString().ToDisplayName());
                     break;
                 case ServerMessageType.TELL_ROLE_LIST:
                     int listIndex = 0;
@@ -456,22 +482,22 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.TELL_TOWN_AMNESIAC_CHANGED_ROLE:
                     ServerMessageParsers.TELL_TOWN_AMNESIAC_CHANGED_ROLE.Build(buffer, index, length).Parse(out roleID);
-                    UI.GameView.AppendLine("An Amnesiac has remembered {0}", roleID.ToString().ToDisplayName());
+                    UI.GameView.AppendLine(("An Amnesiac has remembered {0}", ConsoleColor.Green, ConsoleColor.Black), roleID.ToString().ToDisplayName());
                     break;
                 case ServerMessageType.AMNESIAC_CHANGED_ROLE:
                     ServerMessageParsers.AMNESIAC_CHANGED_ROLE.Build(buffer, index, length).Parse(out roleID).Parse(out targetID);
-                    UI.GameView.AppendLine("You successfully remembered your role");
+                    UI.GameView.AppendLine(("You have attempted to remember who you were!", ConsoleColor.DarkRed));
                     GameState.Role = roleID;
                     targetID.MatchSome(id => GameState.Target = id);
                     break;
                 case ServerMessageType.BROUGHT_BACK_TO_LIFE:
-                    UI.GameView.AppendLine("You have been brought back to life");
+                    UI.GameView.AppendLine(("You have been resurrected by a Retributionist!", ConsoleColor.Green, ConsoleColor.Black));
                     break;
                 case ServerMessageType.START_FIRST_DAY:
                     GameState.Day = 1;
                     break;
                 case ServerMessageType.BEING_JAILED:
-                    UI.GameView.AppendLine("You have been dragged off to jail");
+                    UI.GameView.AppendLine(("You were hauled off to jail", ConsoleColor.Gray));
                     break;
                 case ServerMessageType.JAILED_TARGET:
                     ServerMessageParsers.JAILED_TARGET.Build(buffer, index, length).Parse(out playerID).Parse(out bool canExecute).Parse(out bool executedTown);
@@ -480,55 +506,55 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.USER_JUDGEMENT_VOTED:
                     ServerMessageParsers.USER_JUDGEMENT_VOTED.Build(buffer, index, length).Parse(out playerID);
-                    UI.GameView.AppendLine("{0} has voted", GameState.ToName(playerID));
+                    UI.GameView.AppendLine(("{0} has voted", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID));
                     break;
                 case ServerMessageType.USER_CHANGED_JUDGEMENT_VOTE:
                     ServerMessageParsers.USER_CHANGED_JUDGEMENT_VOTE.Build(buffer, index, length).Parse(out playerID);
-                    UI.GameView.AppendLine("{0} has changed their voted", GameState.ToName(playerID));
+                    UI.GameView.AppendLine(("{0} has changed their voted", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID));
                     break;
                 case ServerMessageType.USER_CANCELED_JUDGEMENT_VOTE:
                     ServerMessageParsers.USER_CANCELED_JUDGEMENT_VOTE.Build(buffer, index, length).Parse(out playerID);
-                    UI.GameView.AppendLine("{0} has cancelled their vote", GameState.ToName(playerID));
+                    UI.GameView.AppendLine(("{0} has cancelled their vote", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID));
                     break;
                 case ServerMessageType.TELL_JUDGEMENT_VOTES:
                     ServerMessageParsers.TELL_JUDGEMENT_VOTES.Build(buffer, index, length).Parse(out playerID).Parse(out JudgementVoteID judgementVote);
-                    UI.GameView.AppendLine("{0} voted {1}", GameState.ToName(playerID), judgementVote.ToString().ToLower().Replace('_', ' '));
+                    UI.GameView.AppendLine(("{0} voted {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID), judgementVote.ToString().ToLower().Replace('_', ' '));
                     break;
                 case ServerMessageType.EXECUTIONER_COMPLETED_GOAL:
-                    UI.GameView.AppendLine("You have successfully gotten your target lynched");
+                    UI.GameView.AppendLine(("You have successfully gotten your target lynched", ConsoleColor.DarkGreen));
                     break;
                 case ServerMessageType.JESTER_COMPLETED_GOAL:
-                    UI.GameView.AppendLine("You have successfully gotten yourself lynched");
+                    UI.GameView.AppendLine(("You have successfully gotten yourself lynched", ConsoleColor.DarkGreen));
                     break;
                 case ServerMessageType.MAYOR_REVEALED:
                     ServerMessageParsers.MAYOR_REVEALED.Build(buffer, index, length).Parse(out playerID);
-                    UI.GameView.AppendLine("{0} has revealed themselves as the mayor", GameState.ToName(playerID));
+                    UI.GameView.AppendLine(("{0} has revealed themselves as the mayor", ConsoleColor.Magenta, ConsoleColor.Black), GameState.ToName(playerID));
                     break;
                 /*case ServerMessageType.MAYOR_REVEALED_AND_ALREADY_VOTED:
                     break;*/
                 case ServerMessageType.DISGUISER_STOLE_YOUR_IDENTITY:
                     ServerMessageParsers.DISGUISER_STOLE_YOUR_IDENTITY.Build(buffer, index, length).Parse(out playerID);
-                    UI.GameView.AppendLine("A disguiser stole your identity. You are now {0}", GameState.ToName(playerID));
+                    UI.GameView.AppendLine(("A disguiser stole your identity. You are now {0}", ConsoleColor.DarkRed), GameState.ToName(playerID));
                     break;
                 case ServerMessageType.DISGUISER_CHANGED_IDENTITY:
                     ServerMessageParsers.DISGUISER_CHANGED_IDENTITY.Build(buffer, index, length).Parse(out playerID);
-                    UI.GameView.AppendLine("You have successfully disguised yourself as {0}", GameState.ToName(playerID));
+                    UI.GameView.AppendLine(("You have successfully disguised yourself as {0}", ConsoleColor.DarkRed), GameState.ToName(playerID));
                     break;
                 case ServerMessageType.DISGUISER_CHANGED_UPDATE_MAFIA:
                     ServerMessageParsers.DISGUISER_CHANGED_UPDATE_MAFIA.Build(buffer, index, length).Parse(out playerID).Parse(out PlayerID disguiserID);
-                    UI.GameView.AppendLine("{1} has successfully disguised themselves as {0}", GameState.ToName(playerID), GameState.ToName(disguiserID));
+                    UI.GameView.AppendLine(("{1} has successfully disguised themselves as {0}", ConsoleColor.DarkRed), GameState.ToName(playerID), GameState.ToName(disguiserID));
                     break;
                 case ServerMessageType.MEDIUM_IS_TALKING_TO_US:
-                    UI.GameView.AppendLine("A medium is talking to you");
+                    UI.GameView.AppendLine(("A medium is talking to you", ConsoleColor.Green, ConsoleColor.Black));
                     break;
                 case ServerMessageType.MEDIUM_COMMUNICATING:
-                    UI.GameView.AppendLine("You have opened a communication with the living");
+                    UI.GameView.AppendLine(("You have opened a communication with the living", ConsoleColor.Green, ConsoleColor.Black));
                     break;
                 case ServerMessageType.TELL_LAST_WILL:
                     ServerMessageParsers.TELL_LAST_WILL.Build(buffer, index, length).Parse(out playerID).Parse(out bool hasLastWill).Parse(hasLastWill, parser =>
                     {
                         RootParser root = parser.Parse(out string will);
-                        GameState.Players[(int)playerID].LastWill = will;
+                        GameState.Players[(int)playerID].LastWill = will.Replace("\n", "");
                         return root;
                     }, parser =>
                     {
@@ -546,7 +572,7 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.TELL_JANITOR_TARGETS_ROLE:
                     ServerMessageParsers.TELL_JANITOR_TARGETS_ROLE.Build(buffer, index, length).Parse(out roleID);
-                    UI.GameView.AppendLine("You secretly know that your target's role was {0}", roleID.ToString().ToDisplayName());
+                    UI.GameView.AppendLine(("You secretly know that your target's role was {0}", ConsoleColor.Green, ConsoleColor.Black), roleID.ToString().ToDisplayName());
                     break;
                 case ServerMessageType.TELL_JANITOR_TARGETS_WILL:
                     ServerMessageParsers.TELL_JANITOR_TARGETS_WILL.Build(buffer, index, length).Parse(out playerID).Parse(out string lastWill);
@@ -561,8 +587,8 @@ namespace ToSTextClient
                         winners.Add(playerID);
                         return root;
                     }, out _);
-                    UI.GameView.AppendLine(winners.Count > 0 ? "Winning faction: {0} ({1})" : "Winning faction: {0}", factionID.ToString().ToDisplayName(), string.Join(", ", winners.Select(p => GameState.ToName(p))));
-                    if (winners.Contains(GameState.Self)) UI.GameView.AppendLine("You have won");
+                    UI.GameView.AppendLine((winners.Count > 0 ? "Winning faction: {0} ({1})" : "Winning faction: {0}", ConsoleColor.Green, ConsoleColor.Black), factionID.ToString().ToDisplayName(), string.Join(", ", winners.Select(p => GameState.ToName(p))));
+                    if (winners.Contains(GameState.Self)) UI.GameView.AppendLine(("You have won", ConsoleColor.Green, ConsoleColor.Black));
                     break;
                 case ServerMessageType.MAFIOSO_PROMOTED_TO_GODFATHER:
                     UI.GameView.AppendLine("You have been promoted to Godfather");
@@ -582,19 +608,19 @@ namespace ToSTextClient
                     GameState.Players[(int)playerID].Role = RoleID.MAFIOSO;
                     break;
                 case ServerMessageType.EXECUTIONER_CONVERTED_TO_JESTER:
-                    UI.GameView.AppendLine("Your target has died");
+                    UI.GameView.AppendLine(("Your target has died", ConsoleColor.DarkRed));
                     break;
                 case ServerMessageType.AMNESIAC_BECAME_MAFIA_OR_WITCH:
                     ServerMessageParsers.AMNESIAC_BECAME_MAFIA_OR_WITCH.Build(buffer, index, length).Parse(out playerID).Parse(out roleID);
-                    UI.GameView.AppendLine("{0} has remembered {1}", GameState.ToName(playerID), roleID.ToString().ToDisplayName());
+                    UI.GameView.AppendLine(("{0} has remembered {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID), roleID.ToString().ToDisplayName());
                     break;
                 case ServerMessageType.USER_DISCONNECTED:
                     ServerMessageParsers.USER_DISCONNECTED.Build(buffer, index, length).Parse(out playerID);
-                    UI.GameView.AppendLine("{0} has left the game", GameState.ToName(playerID));
+                    UI.GameView.AppendLine(("{0} has left the game", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID));
                     break;
                 case ServerMessageType.MAFIA_WAS_JAILED:
                     ServerMessageParsers.MAFIA_WAS_JAILED.Build(buffer, index, length).Parse(out playerID);
-                    UI.GameView.AppendLine("{0} has been dragged off to jail", GameState.ToName(GameState.Players[(int)playerID]));
+                    UI.GameView.AppendLine(("{0} has been dragged off to jail", ConsoleColor.DarkRed), GameState.ToName(GameState.Players[(int)playerID]));
                     break;
                 case ServerMessageType.INVALID_NAME_MESSAGE:
                     ServerMessageParsers.INVALID_NAME_MESSAGE.Build(buffer, index, length).Parse(out InvalidNameStatus invalidNameStatus);
@@ -606,27 +632,29 @@ namespace ToSTextClient
                 // Add missing cases here
                 case ServerMessageType.DEATH_NOTE:
                     ServerMessageParsers.DEATH_NOTE.Build(buffer, index, length).Parse(out playerID).Parse(out _).Parse(out string deathNote);
-                    GameState.Players[(int)playerID].DeathNote = deathNote;
+                    GameState.Players[(int)playerID].DeathNote = deathNote.Replace("\n", "");
                     break;
                 // Add missing cases here
                 case ServerMessageType.RESURRECTION_SET_ALIVE:
                     ServerMessageParsers.RESURRECTION_SET_ALIVE.Build(buffer, index, length).Parse(out playerID);
-                    UI.GameView.AppendLine("{0} has been brought back to life (set alive)", GameState.ToName(playerID));
+                    GameState.Players[(int)playerID].Dead = false;
                     break;
                 case ServerMessageType.START_DEFENSE:
-                    UI.GameView.AppendLine("What is your defense?");
+                    GameState.Timer = 20;
+                    GameState.TimerText = "Defense";
+                    UI.GameView.AppendLine(("What is your defense?", ConsoleColor.Green, ConsoleColor.Black));
                     break;
                 case ServerMessageType.USER_LEFT_DURING_SELECTION:
                     ServerMessageParsers.USER_LEFT_DURING_SELECTION.Build(buffer, index, length).Parse(out playerID);
-                    UI.GameView.AppendLine("{0} left during selection", GameState.ToName(playerID));
+                    UI.GameView.AppendLine(("{0} left during selection", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID));
                     GameState.Players[(int)playerID].Left = true;
                     break;
                 case ServerMessageType.VIGILANTE_KILLED_TOWN:
-                    UI.GameView.AppendLine("You put your gun away out of fear of shooting another town member");
+                    UI.GameView.AppendLine(("You put your gun away out of fear of shooting another town member", ConsoleColor.Green, ConsoleColor.Black));
                     break;
                 case ServerMessageType.NOTIFY_USERS_OF_PRIVATE_MESSAGE:
                     ServerMessageParsers.NOTIFY_USERS_OF_PRIVATE_MESSAGE.Build(buffer, index, length).Parse(out playerID).Parse(out PlayerID receiverID);
-                    UI.GameView.AppendLine("{0} is whispering to {1}", GameState.ToName(playerID), GameState.ToName(receiverID));
+                    UI.GameView.AppendLine(("{0} is whispering to {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID), GameState.ToName(receiverID));
                     break;
                 case ServerMessageType.PRIVATE_MESSAGE:
                     receiverID = default(PlayerID);
@@ -635,13 +663,13 @@ namespace ToSTextClient
                     switch (pmType)
                     {
                         case PrivateMessageType.TO:
-                            UI.GameView.AppendLine("To {0}: {1}", GameState.ToName(playerID), message);
+                            UI.GameView.AppendLine(("To {0}: {1}", ConsoleColor.Magenta, ConsoleColor.Black), GameState.ToName(playerID), message);
                             break;
                         case PrivateMessageType.FROM:
-                            UI.GameView.AppendLine("From {0}: {1}", GameState.ToName(playerID), message);
+                            UI.GameView.AppendLine(("From {0}: {1}", ConsoleColor.Magenta, ConsoleColor.Black), GameState.ToName(playerID), message);
                             break;
                         case PrivateMessageType.FROM_TO:
-                            UI.GameView.AppendLine("From {0} to {1}: {2}", GameState.ToName(playerID), GameState.ToName(receiverID), message);
+                            UI.GameView.AppendLine(("From {0} to {1}: {2}", ConsoleColor.Magenta, ConsoleColor.Black), GameState.ToName(playerID), GameState.ToName(receiverID), message);
                             break;
                     }
                     break;
@@ -649,33 +677,36 @@ namespace ToSTextClient
                     ServerMessageParsers.EARNED_ACHIEVEMENTS_161.Build(buffer, index, length).Parse(parser =>
                     {
                         RootParser root = parser.Parse(out AchievementID id);
-                        UI.GameView.AppendLine("You have earned the achievement {0}", id.ToString().ToDisplayName());
+                        UI.GameView.AppendLine(("You have earned the achievement {0}", ConsoleColor.DarkGreen), id.ToString().ToDisplayName());
                         return root;
                     }, out _);
                     break;
                 case ServerMessageType.AUTHENTICATION_FAILED:
                     ServerMessageParsers.AUTHENTICATION_FAILED.Build(buffer, index, length).Parse(out AuthenticationResult authResult);
-                    UI.HomeView.ReplaceLine(0, "Authentication failed: {0}", authResult);
+                    UI.HomeView.ReplaceLine(0, ("Authentication failed: {0}", ConsoleColor.DarkRed), authResult);
                     break;
                 case ServerMessageType.SPY_NIGHT_ABILITY_MESSAGE:
-                    ServerMessageParsers.SPY_NIGHT_ABILITY_MESSAGE.Build(buffer, index, length).Parse(out factionID).Parse(out playerID);
-                    UI.GameView.AppendLine("A member of the {0} visited {1}", GameState.ToName(playerID));
+                    ServerMessageParsers.SPY_NIGHT_ABILITY_MESSAGE.Build(buffer, index, length).Parse(out bool isCoven).Parse(out playerID);
+                    UI.GameView.AppendLine(("A member of the {0} visited {1}", ConsoleColor.Green, ConsoleColor.Black), isCoven ? "Coven" : "Mafia", GameState.ToName(playerID));
                     break;
                 case ServerMessageType.ONE_DAY_BEFORE_STALEMATE:
-                    UI.GameView.AppendLine("If noone dies by tomorrow, the game will end in a draw");
+                    UI.GameView.AppendLine(("If noone dies by tomorrow, the game will end in a draw", ConsoleColor.Green, ConsoleColor.Black));
                     break;
                 // Add missing cases here
                 case ServerMessageType.FULL_MOON_NIGHT:
-                    UI.GameView.AppendLine("There is a full moon out tonight");
+                    UI.GameView.AppendLine(LocalizationTableID.FULL_MOON.ToEnglish());
                     break;
-                // Add missing cases here
+                case ServerMessageType.IDENTIFY:
+                    ServerMessageParsers.IDENTIFY.Build(buffer, index, length).Parse(out string value);
+                    UI.GameView.AppendLine((value, ConsoleColor.Yellow, ConsoleColor.Black));
+                    break;
                 case ServerMessageType.END_GAME_INFO:
                     UI.CommandContext = CommandContext.POST_GAME;
-                    UI.GameView.AppendLine("Entered the post-game lobby");
+                    UI.GameView.AppendLine(("Entered the post-game lobby", ConsoleColor.Green, ConsoleColor.Black));
                     break;
                 // Add missing cases here
                 case ServerMessageType.VAMPIRE_PROMOTION:
-                    UI.GameView.AppendLine("You have been bitten by a Vampire");        // TODO: Check if I should set role here.
+                    UI.GameView.AppendLine(("You have been bitten by a Vampire", ConsoleColor.DarkRed));        // TODO: Check if I should set role here.
                     break;
                 case ServerMessageType.OTHER_VAMPIRES:
                     GameState.Team.Clear();
@@ -699,20 +730,20 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.VAMPIRE_DIED:
                     ServerMessageParsers.VAMPIRE_DIED.Build(buffer, index, length).Parse(out playerID).Parse(out targetID);
-                    UI.GameView.AppendLine("{0}, your teammate, died");
+                    UI.GameView.AppendLine(("{0}, your teammate, died", ConsoleColor.DarkRed));
                     targetID.MatchSome(id => UI.GameView.AppendLine("{0} is now the youngest vampire", GameState.ToName(id)));
                     break;
                 case ServerMessageType.VAMPIRE_HUNTER_PROMOTED:
-                    UI.GameView.AppendLine("All vampires have died, so you have become a vigilante with 1 bullet");     // TODO: Check if I should set role here.
+                    UI.GameView.AppendLine(("All vampires have died, so you have become a vigilante with 1 bullet", ConsoleColor.DarkGreen));     // TODO: Check if I should set role here.
                     break;
                 case ServerMessageType.VAMPIRE_VISITED_MESSAGE:
                     ServerMessageParsers.VAMPIRE_VISITED_MESSAGE.Build(buffer, index, length).Parse(out playerID);
-                    UI.GameView.AppendLine("Vampires visited {0}", GameState.ToName(playerID));
+                    UI.GameView.AppendLine(("Vampires visited {0}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID));
                     break;
                 // Add missing cases here
                 case ServerMessageType.TRANSPORTER_NOTIFICATION:
                     ServerMessageParsers.TRANSPORTER_NOTIFICATION.Build(buffer, index, length).Parse(out playerID).Parse(out receiverID);
-                    UI.GameView.AppendLine("A transporter transported {0} and {1}", GameState.ToName(playerID), GameState.ToName(receiverID));
+                    UI.GameView.AppendLine(("A transporter transported {0} and {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID), GameState.ToName(receiverID));
                     break;
                 // Add missing cases here
                 case ServerMessageType.ACTIVE_GAME_MODES:
@@ -732,13 +763,22 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.DISCONNECTED:
                     ServerMessageParsers.DISCONNECTED.Build(buffer, index, length).Parse(out DisconnectReasonID dcReason);
-                    UI.HomeView.ReplaceLine(0, "Disconnected: {0}", dcReason);
+                    UI.HomeView.ReplaceLine(0, ("Disconnected: {0}", ConsoleColor.DarkRed), dcReason);
                     break;
                 case ServerMessageType.SPY_NIGHT_INFO:
-                    ServerMessageParsers.SPY_NIGHT_INFO.Build(buffer, index, length).Parse(out tableMessage);
-                    UI.GameView.AppendLine("Target saw message: {0}", tableMessage.ToString().ToDisplayName());
+                    ServerMessageParsers.SPY_NIGHT_INFO.Build(buffer, index, length).Parse(parser =>
+                    {
+                        RootParser root = parser.Parse(out tableMessage);
+                        UI.GameView.AppendLine(("Target saw message: {0}", ConsoleColor.Green, ConsoleColor.Black), tableMessage.ToString().ToDisplayName());
+                        return root;
+                    }, out _);
                     break;
-                    // Add missing cases here
+                // Add missing cases here
+#if DEBUG
+                default:
+                    UI.GameView.AppendLine(("Uncaught message: {0}", ConsoleColor.DarkRed), ((ServerMessageType)buffer[index - 1]).ToString().ToDisplayName());
+                    break;
+#endif
             }
         }
 
@@ -869,248 +909,248 @@ namespace ToSTextClient
             yield return value;
         }
 
-        public static string ToEnglish(this LocalizationTableID id)
+        internal static FormattedString ToEnglish(this LocalizationTableID id)
         {
             switch (id)
             {
                 case LocalizationTableID.SHERIFF_TARGET_MEMBER_OF_MAFIA:
-                    return "Your target is a member of the mafia!";
+                    return ("Your target is a member of the mafia!", ConsoleColor.DarkRed);
                 case LocalizationTableID.SHERIFF_TARGET_NOT_SUSPICIOUS:
-                    return "Your target is not suspicious";
+                    return ("Your target is not suspicious", ConsoleColor.DarkRed);
                 case LocalizationTableID.SHERIFF_TARGET_MEMBER_OF_CULT:
-                    return "Your target is a member of the cult!";
+                    return ("Your target is a member of the cult!", ConsoleColor.DarkRed);
                 case LocalizationTableID.SHERIFF_TARGET_SERIAL_KILLER:
-                    return "Your target is a Serial Killer!";
+                    return ("Your target is a Serial Killer!", ConsoleColor.DarkRed);
                 case LocalizationTableID.EXECUTED_BY_JAILOR:
-                    return "You were executed by the Jailor!";
+                    return ("You were executed by the Jailor!", ConsoleColor.DarkRed);
                 case LocalizationTableID.TRANSPORTED_BUT_JAILED:
-                    return "Someone tried to transport you but you were in jail";
+                    return ("Someone tried to transport you but you were in jail", ConsoleColor.DarkRed);
                 case LocalizationTableID.TRANSPORTED:
-                    return "You were transported to another location";
+                    return ("You were transported to another location", ConsoleColor.DarkRed);
                 case LocalizationTableID.ROLE_BLOCKED_BUT_JAILED:
-                    return "Someone tried to role block you but you were in jail";
+                    return ("Someone tried to role block you but you were in jail", ConsoleColor.DarkRed);
                 case LocalizationTableID.ROLE_BLOCKED:
-                    return "Someone occupied your night. You were role blocked!";
+                    return ("Someone occupied your night. You were role blocked!", ConsoleColor.DarkRed);
                 case LocalizationTableID.BLACKMAILED_BUT_JAILED:
-                    return "Someone tried to blackmail you but you were in jail";
+                    return ("Someone tried to blackmail you but you were in jail", ConsoleColor.DarkRed);
                 case LocalizationTableID.BLACKMAILED:
-                    return "Someone threatened to reveal your secrets. You are blackmailed!";
+                    return ("Someone threatened to reveal your secrets. You are blackmailed!", ConsoleColor.DarkRed);
                 case LocalizationTableID.DOUSED_BUT_JAILED:
-                    return "Someone tried to douse you in gas but you were in jail";
+                    return ("Someone tried to douse you in gas but you were in jail", ConsoleColor.DarkRed);
                 case LocalizationTableID.DOUSED:
-                    return "You were doused in gas!";
+                    return ("You were doused in gas!", ConsoleColor.DarkRed);
                 case LocalizationTableID.ATTACKED_BUT_JAILED:
-                    return "Someone tried to attack you but you were in jail";
+                    return ("Someone tried to attack you but you were in jail", ConsoleColor.DarkRed);
                 case LocalizationTableID.ATTACKED_BUT_BODYGUARD_PROTECTED:
-                    return "You were attacked but someone fought off your attacker!";
+                    return ("You were attacked but someone fought off your attacker!", ConsoleColor.DarkRed);
                 case LocalizationTableID.ATTACKED_BUT_HEALED:
-                    return "You were attacked but someone nursed you back to health!";
+                    return ("You were attacked but someone nursed you back to health!", ConsoleColor.DarkGreen);
                 case LocalizationTableID.ATTACKED_BY_MAFIA:
-                    return "You were attacked by a member of the Mafia!";
+                    return ("You were attacked by a member of the Mafia!", ConsoleColor.DarkRed);
                 case LocalizationTableID.ATTACKED_BY_SERIAL_KILLER:
-                    return "You were attacked by a Serial Killer!";
+                    return ("You were attacked by a Serial Killer!", ConsoleColor.DarkRed);
                 case LocalizationTableID.SHOT_BY_VIGILANTE:
-                    return "You were shot by a Vigilante!";
+                    return ("You were shot by a Vigilante!", ConsoleColor.DarkRed);
                 case LocalizationTableID.IGNITED_BY_ARSONIST:
-                    return "You were set on fire by an Arsonist!";
+                    return ("You were set on fire by an Arsonist!", ConsoleColor.DarkRed);
                 case LocalizationTableID.SHOT_BY_VETERAN:
-                    return "You were shot by the Veteran you visited!";
+                    return ("You were shot by the Veteran you visited!", ConsoleColor.DarkRed);
                 case LocalizationTableID.KILLED_PROTECTING:
-                    return "You were killed protecting your target!";
+                    return ("You were killed protecting your target!", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_ATTACKED:
-                    return "Your target was attacked last night!";
+                    return ("Your target was attacked last night!", ConsoleColor.DarkRed);
                 case LocalizationTableID.DOUSED_BUT_BODYGUARD_PROTECTED:
-                    return "An Arsonist tried to douse you in gas but a Bodyguard fought off your attacker!";
+                    return ("An Arsonist tried to douse you in gas but a Bodyguard fought off your attacker!", ConsoleColor.DarkRed);
                 case LocalizationTableID.MURDERED_BY_VISITED_SERIAL_KILLER:
-                    return "You were murdered by the Serial Killer you visited!";
+                    return ("You were murdered by the Serial Killer you visited!", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_FRAMER:
-                    return "Your target has a desire to deceive. They must be a Framer!";
+                    return ("Your target has a desire to deceive. They must be a Framer!", ConsoleColor.DarkRed);
                 case LocalizationTableID.INVESTIGATOR_TARGET_IS_ESCORT:
-                    return "Your target could be an Escort, Transporter, or Consort";
+                    return ("Your target could be an Escort, Transporter, or Consort", ConsoleColor.DarkRed);
                 case LocalizationTableID.INVESTIGATOR_TARGET_IS_DOCTOR:
-                    return "Your target could be a Doctor, Disguiser, or Serial Killer";
+                    return ("Your target could be a Doctor, Disguiser, or Serial Killer", ConsoleColor.DarkRed);
                 case LocalizationTableID.INVESTIGATOR_TARGET_IS_INVESTIGATOR:
-                    return "Your target could be an Investigator, Consigliere, or Mayor";
+                    return ("Your target could be an Investigator, Consigliere, or Mayor", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_MYSTERY_ROLE:
-                    return "Your target is the Mystery role!";
+                    return ("Your target is the Mystery role!", ConsoleColor.DarkRed);
                 case LocalizationTableID.INVESTIGATOR_TARGET_IS_BODYGUARD:
-                    return "Your target could be a Bodyguard, Godfather, or Arsonist";
+                    return ("Your target could be a Bodyguard, Godfather, or Arsonist", ConsoleColor.DarkRed);
                 case LocalizationTableID.INVESTIGATOR_TARGET_IS_VIGILANTE:
-                    return "Your target could be a Vigilante, Veteran, or Mafioso";
+                    return ("Your target could be a Vigilante, Veteran, or Mafioso", ConsoleColor.DarkRed);
                 case LocalizationTableID.INVESTIGATOR_TARGET_IS_MEDIUM:
-                    return "Your target could be a Medium, Janitor, or Retributionist";
+                    return ("Your target could be a Medium, Janitor, or Retributionist", ConsoleColor.DarkRed);
                 case LocalizationTableID.INVESTIGATOR_TARGET_IS_SURVIVOR:
-                    return "Your target could be a Survivor, Vampire Hunter, or Amnesiac";
+                    return ("Your target could be a Survivor, Vampire Hunter, or Amnesiac", ConsoleColor.DarkRed);
                 case LocalizationTableID.INVESTIGATOR_TARGET_IS_SPY:
-                    return "Your target could be a Spy, Blackmailer, or Jailor";
+                    return ("Your target could be a Spy, Blackmailer, or Jailor", ConsoleColor.DarkRed);
                 case LocalizationTableID.INVESTIGATOR_TARGET_IS_SHERIFF:
-                    return "Your target could be a Sheriff, Executioner, or Werewolf";
+                    return ("Your target could be a Sheriff, Executioner, or Werewolf", ConsoleColor.DarkRed);
                 case LocalizationTableID.UNUSED:
-                    return "UNUSED";
+                    return ("UNUSED", ConsoleColor.DarkRed);
                 case LocalizationTableID.INVESTIGATOR_TARGET_IS_FRAMER:
-                    return "Your target could be a Framer, Vampire, or Jester";
+                    return ("Your target could be a Framer, Vampire, or Jester", ConsoleColor.DarkRed);
                 case LocalizationTableID.INVESTIGATOR_TARGET_IS_LOOKOUT:
-                    return "Your target could be a Lookout, Forger, or Witch";
+                    return ("Your target could be a Lookout, Forger, or Witch", ConsoleColor.DarkRed);
                 case LocalizationTableID.ATTACKED_BY_BODYGUARD_BUT_HEALED:
-                    return "A Bodyguard attacked you but someone nursed you back to health!";
+                    return ("A Bodyguard attacked you but someone nursed you back to health!", ConsoleColor.DarkRed);
                 case LocalizationTableID.ATTACKED_BY_BODYGUARD_BUT_BODYGUARD_PROTECTED:
-                    return "A Bodyguard attacked you but someone fought off your attacker!";
+                    return ("A Bodyguard attacked you but someone fought off your attacker!", ConsoleColor.DarkRed);
                 case LocalizationTableID.KILLED_BY_BODYGUARD:
-                    return "You were killed by a Bodyguard!";
+                    return ("You were killed by a Bodyguard!", ConsoleColor.DarkRed);
                 case LocalizationTableID.ATTACKED_BUT_DEFENSE_TOO_STRONG:
-                    return "Someone attacked you but your defense was too strong!";
+                    return ("Someone attacked you but your defense was too strong!", ConsoleColor.DarkRed);
                 case LocalizationTableID.TRANSPORTER_TARGET_JAILED:
-                    return "One of your targets was jailed so you could not transport them!";
+                    return ("One of your targets was jailed so you could not transport them!", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_BODYGUARD:
-                    return "Your target is a trained protector: they must be a Bodyguard";
+                    return ("Your target is a trained protector: they must be a Bodyguard", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_TRANSPORTER:
-                    return "Your target specializes in transportation: they must be a Transporter";
+                    return ("Your target specializes in transportation: they must be a Transporter", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_DOCTOR:
-                    return "Your target is a professional surgeon: they must be a Doctor";
+                    return ("Your target is a professional surgeon: they must be a Doctor", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_ESCORT:
-                    return "Your target is a beautiful person working for the town: they must be an Escort";
+                    return ("Your target is a beautiful person working for the town: they must be an Escort", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_INVESTIGATOR:
-                    return "Your target gathers information about people: they must be an Investigator";
+                    return ("Your target gathers information about people: they must be an Investigator", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_JAILOR:
-                    return "Your target detains people at night: they must be a Jailor";
+                    return ("Your target detains people at night: they must be a Jailor", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_LOOKOUT:
-                    return "Your target watches who visits people at night: they must be a Lookout";
+                    return ("Your target watches who visits people at night: they must be a Lookout", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_MASON:
-                    return "Your target is a member of a secret town organization: they must be a Mason";
+                    return ("Your target is a member of a secret town organization: they must be a Mason", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_MASON_LEADER:
-                    return "Your target is the leader of a secret town organization: they must be a Mason Leader";
+                    return ("Your target is the leader of a secret town organization: they must be a Mason Leader", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_MAYOR:
-                    return "Your target is the leader of the town: they must be the Mayor";
+                    return ("Your target is the leader of the town: they must be the Mayor", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_SHERIFF:
-                    return "Your target is a protector of the town: they must be a Sheriff";
+                    return ("Your target is a protector of the town: they must be a Sheriff", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_SPY:
-                    return "Your target secretly watches who someone visits: they must be a Spy";
+                    return ("Your target secretly watches who someone visits: they must be a Spy", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_VETERAN:
-                    return "Your target is a paranoid war hero: they must be a Veteran";
+                    return ("Your target is a paranoid war hero: they must be a Veteran", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_VIGILANTE:
-                    return "Your target will bend the law to enact justice: they must be a Vigilante";
+                    return ("Your target will bend the law to enact justice: they must be a Vigilante", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_MEDIUM:
-                    return "Your target speaks with the dead: they must be a Medium";
+                    return ("Your target speaks with the dead: they must be a Medium", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_RETRIBUTIONIST:
-                    return "Your target wields mystical powers: they must be a Retributionist";
+                    return ("Your target wields mystical powers: they must be a Retributionist", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_BLACKMAILER:
-                    return "Your target uses information to silence people: they must be a Blackmailer";
+                    return ("Your target uses information to silence people: they must be a Blackmailer", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_CONSIGLIERE:
-                    return "Your target gathers information for the Mafia: they must be a Consigliere";
+                    return ("Your target gathers information for the Mafia: they must be a Consigliere", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_CONSORT:
-                    return "Your target is a beautiful person working for the Mafia: they must be a Consort";
+                    return ("Your target is a beautiful person working for the Mafia: they must be a Consort", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_DISGUISER:
-                    return "Your target pretends to be other people: they must be a Disguiser";
+                    return ("Your target pretends to be other people: they must be a Disguiser", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_FORGER:
-                    return "Your target is good at forging documents: they must be a Forger";
+                    return ("Your target is good at forging documents: they must be a Forger", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_GODFATHER:
-                    return "Your target is the leader of the Mafia: they must be the Godfather";
+                    return ("Your target is the leader of the Mafia: they must be the Godfather", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_JANITOR:
-                    return "Your target cleans up dead bodies: they must be a Janitor";
+                    return ("Your target cleans up dead bodies: they must be a Janitor", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_MAFIOSO:
-                    return "Your target does the Godfather's dirty work: they must be a Mafioso";
+                    return ("Your target does the Godfather's dirty work: they must be a Mafioso", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_AMNESIAC:
-                    return "Your target does not remember their role: they must be an Amnesiac";
+                    return ("Your target does not remember their role: they must be an Amnesiac", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_ARSONIST:
-                    return "Your target likes to watch things burn: they must be an Arsonist";
+                    return ("Your target likes to watch things burn: they must be an Arsonist", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_CULTIST:
-                    return "Your target is a member of an evil secret organization: they must be a Cultist";
+                    return ("Your target is a member of an evil secret organization: they must be a Cultist", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_EXECUTIONER:
-                    return "Your target wants someone to be lynched at any cost: they must be an Executioner";
+                    return ("Your target wants someone to be lynched at any cost: they must be an Executioner", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_JESTER:
-                    return "Your target wants to be lynched: they must be a Jester";
+                    return ("Your target wants to be lynched: they must be a Jester", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_SERIAL_KILLER:
-                    return "Your target wants to kill everyone: they must be a Serial Killer";
+                    return ("Your target wants to kill everyone: they must be a Serial Killer", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_SURVIVOR:
-                    return "Your target simply wants to live: they must be a Survivor";
+                    return ("Your target simply wants to live: they must be a Survivor", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_WITCH:
-                    return "Your target casts spells on people: they must be a Witch";
+                    return ("Your target casts spells on people: they must be a Witch", ConsoleColor.DarkRed);
                 case LocalizationTableID.WITCH_TARGET_JAILED:
-                    return "Your target was jailed so you could not control them";
+                    return ("Your target was jailed so you could not control them", ConsoleColor.DarkRed);
                 case LocalizationTableID.ROLEBLOCKED_BUT_IMMUNE:
-                    return "Someone tried to role block you but you are immune!";
+                    return ("Someone tried to role block you but you are immune!", ConsoleColor.DarkRed);
                 case LocalizationTableID.CONTROLLED_BY_WITCH:
-                    return "You feel a mystical power dominating you. You were controlled by a Witch!";
+                    return ("You feel a mystical power dominating you. You were controlled by a Witch!", ConsoleColor.DarkRed);
                 case LocalizationTableID.CONTROLLED_BY_WITCH_BUT_IMMUNE:
-                    return "A Witch tried to control you but you are immune";
+                    return ("A Witch tried to control you but you are immune", ConsoleColor.DarkRed);
                 case LocalizationTableID.CONTROLLED_BUT_JAILED:
-                    return "Someone tried to control you but you were jailed";
+                    return ("Someone tried to control you but you were jailed", ConsoleColor.DarkRed);
                 case LocalizationTableID.JOINED_THE_TOWN:
-                    return "{0} has joined the Town";
+                    return ("{0} has joined the Town", ConsoleColor.Green, ConsoleColor.Black);
                 case LocalizationTableID.ATTEMPTED_TO_REMEMBER:
-                    return "You have attempted to remember who you were!";
+                    return ("You have attempted to remember who you were!", ConsoleColor.DarkRed);
                 case LocalizationTableID.HAUNTED_BY_JESTER:
-                    return "You were haunted by the Jester. You committed suicide over the guilt!";
+                    return ("You were haunted by the Jester. You committed suicide over the guilt!", ConsoleColor.DarkRed);
                 case LocalizationTableID.ATTACKED_BUT_VESTED:
-                    return "You were attacked but your bulletproof vest saved you!";
+                    return ("You were attacked but your bulletproof vest saved you!", ConsoleColor.DarkRed);
                 case LocalizationTableID.SHOT_VISITOR:
-                    return "You shot someone who visited you last night!";
+                    return ("You shot someone who visited you last night!", ConsoleColor.DarkRed);
                 case LocalizationTableID.ATTACKED_BUT_ALERT_DEFENSE_TOO_STRONG:
-                    return "Someone tried to attack you but your defense while on alert was too strong!";
+                    return ("Someone tried to attack you but your defense while on alert was too strong!", ConsoleColor.DarkRed);
                 case LocalizationTableID.HAUNTED_BY_JESTER_BUT_HEALED:
-                    return "You were haunted by the Jester. You tried to commit suicide but someone healed you!";
+                    return ("You were haunted by the Jester. You tried to commit suicide but someone healed you!", ConsoleColor.DarkRed);
                 case LocalizationTableID.VIGILANTE_SUICIDE:
-                    return "You could not get over the guilt of killing a town member. You shot yourself!";
+                    return ("You could not get over the guilt of killing a town member. You shot yourself!", ConsoleColor.DarkRed);
                 case LocalizationTableID.ATTACKED_ROLE_BLOCKER:
-                    return "Someone role blocked you, so you attacked them!";
+                    return ("Someone role blocked you, so you attacked them!", ConsoleColor.DarkRed);
                 case LocalizationTableID.ORDERED_BY_GODFATHER:
-                    return "The Godfather has ordered you to kill his target";
+                    return ("The Godfather has ordered you to kill his target", ConsoleColor.DarkRed);
                 case LocalizationTableID.CANNOT_RESURRECT_DISCONNECTED:
-                    return "You cannot resurrect a user who has left the game";
+                    return ("You cannot resurrect a user who has left the game", ConsoleColor.DarkRed);
                 case LocalizationTableID.CLEANED_GASOLINE_OFF:
-                    return "You have cleaned the gasoline off of yourself";
+                    return ("You have cleaned the gasoline off of yourself", ConsoleColor.DarkRed);
                 case LocalizationTableID.JAILOR_DECIDED_TO_EXECUTE:
-                    return "The Jailor has decided to execute you";
+                    return ("The Jailor has decided to execute you", ConsoleColor.DarkRed);
                 case LocalizationTableID.JAILOR_CHANGED_MIND:
-                    return "The Jailor has changed his mind";
+                    return ("The Jailor has changed his mind", ConsoleColor.DarkRed);
                 case LocalizationTableID.KILLED_BY_JAILED_SERIAL_KILLER:
-                    return "You were killed by the Serial Killer you jailed";
+                    return ("You were killed by the Serial Killer you jailed", ConsoleColor.DarkRed);
                 case LocalizationTableID.ATTACKED_JAILOR:
-                    return "You attacked the Jailor!";
+                    return ("You attacked the Jailor!", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_DEFENSE_TOO_STRONG:
-                    return "Your target's defense was too strong to kill";
+                    return ("Your target's defense was too strong to kill", ConsoleColor.DarkRed);
                 case LocalizationTableID.LYNCHED_JESTER:
-                    return "The Jester will get his revenge from the grave!";
+                    return ("The Jester will get his revenge from the grave!", ConsoleColor.DarkRed);
                 case LocalizationTableID.JESTER_RANDOM_TARGET_CHOSEN:
-                    return "You did not select a target so one was chosen at random";
+                    return ("You did not select a target so one was chosen at random", ConsoleColor.DarkRed);
                 case LocalizationTableID.FULL_MOON:
-                    return "There is a full moon out tonight";
+                    return ("There is a full moon out tonight", ConsoleColor.Blue);
                 case LocalizationTableID.ATTACKED_SOMEONE:
-                    return "You attacked someone";
+                    return ("You attacked someone", ConsoleColor.DarkRed);
                 case LocalizationTableID.SHERIFF_TARGET_IS_WEREWOLF:
-                    return "Your target is a Werewolf!";
+                    return ("Your target is a Werewolf!", ConsoleColor.DarkRed);
                 case LocalizationTableID.ATTACKED_BY_WEREWOLF:
-                    return "You were attacked by a Werewolf!";
+                    return ("You were attacked by a Werewolf!", ConsoleColor.DarkRed);
                 case LocalizationTableID.TURNED_INTO_WEREWOLF:
-                    return "The light of the full moon has transformed you into a rampaging Werewolf!";
+                    return ("The light of the full moon has transformed you into a rampaging Werewolf!", ConsoleColor.DarkRed);
                 case LocalizationTableID.ROLE_BLOCKED_SO_STAYED_AT_HOME:
-                    return "Someone role blocked you so you stayed at home";
+                    return ("Someone role blocked you so you stayed at home", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_WEREWOLF:
-                    return "Your target howls at the moon: they must be a Werewolf";
+                    return ("Your target howls at the moon: they must be a Werewolf", ConsoleColor.DarkRed);
                 case LocalizationTableID.DID_NOT_PERFORM_DAY_ABILITY:
-                    return "You did not perform your day ability";
+                    return ("You did not perform your day ability", ConsoleColor.DarkRed);
                 case LocalizationTableID.DID_NOT_PERFORM_NIGHT_ABILITY:
-                    return "You did not perform your night ability";
+                    return ("You did not perform your night ability", ConsoleColor.DarkRed);
                 case LocalizationTableID.STAKED_BY_VAMPIRE_HUNTER:
-                    return "You were staked by a Vampire Hunter!";
+                    return ("You were staked by a Vampire Hunter!", ConsoleColor.DarkRed);
                 case LocalizationTableID.STAKED_BY_VISITED_VAMPIRE_HUNTER:
-                    return "You were staked by the Vampire Hunter you visited!";
+                    return ("You were staked by the Vampire Hunter you visited!", ConsoleColor.DarkRed);
                 case LocalizationTableID.STAKED_ATTACKING_VAMPIRE:
-                    return "You staked the Vampire who attacked you!";
+                    return ("You staked the Vampire who attacked you!", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_VAMPIRE_HUNTER:
-                    return "Your target tracks Vampires: they must be a Vampire Hunter";
+                    return ("Your target tracks Vampires: they must be a Vampire Hunter", ConsoleColor.DarkRed);
                 case LocalizationTableID.TARGET_IS_VAMPIRE:
-                    return "Your target drinks blood: they must be a Vampire";
+                    return ("Your target drinks blood: they must be a Vampire", ConsoleColor.DarkRed);
                 case LocalizationTableID.ATTACKED_BY_VAMPIRE:
-                    return "You were attacked by a Vampire!";
+                    return ("You were attacked by a Vampire!", ConsoleColor.DarkRed);
                 case LocalizationTableID.CANNOT_WHISPER_REVEALED_MAYOR:
-                    return "You can't whisper to a revealed Mayor";
+                    return ("You can't whisper to a revealed Mayor", ConsoleColor.DarkRed);
                 case LocalizationTableID.MAYOR_CANNOT_WHISPER_WHEN_REVEALED:
-                    return "You can't whisper once you have revealed as the Mayor";
+                    return ("You can't whisper once you have revealed as the Mayor", ConsoleColor.DarkRed);
                 case LocalizationTableID.MAFIA_SOMEONE_IS_LISTENING:
-                    return "You feel that someone can hear your conversations";
+                    return ("You feel that someone can hear your conversations", ConsoleColor.DarkRed);
                 case LocalizationTableID.MAFIA_NOBODY_IS_LISTENING:
-                    return "You feel like you can speak privately";
+                    return ("You feel like you can speak privately", ConsoleColor.DarkRed);
                 // Add missing cases here
             }
             return id.ToString().ToDisplayName();
@@ -1119,5 +1159,7 @@ namespace ToSTextClient
         public static string[] SplitCommand(this string input) => input.Split(' ');
 
         public static string PadRightHard(this string value, int length) => value.Length > length ? value.Substring(0, length) : value.PadRight(length);
+
+        internal static FormattedString Format(this FormattedString value, params object[] args) => new FormattedString(string.Format(value.Value, args), value.Foreground, value.Background);
     }
 }

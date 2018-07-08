@@ -94,7 +94,8 @@ namespace ToSTextClient
                 string cmdn = cmd[1].ToLower();
                 if (cmdn == "help") OpenSideView(helpView);
                 else if (cmdn == "modes" && mainView == HomeView) OpenSideView(GameModeView);
-                else if (cmdn == "players" && mainView == GameView) OpenSideView(PlayerListView);
+                else if ((cmdn == "roles" || cmdn == "rolelist") && mainView == GameView) OpenSideView(RoleListView);
+                else if ((cmdn == "players" || cmdn == "playerlist") && mainView == GameView) OpenSideView(PlayerListView);
                 else if (cmdn == "graveyard" && mainView == GameView) OpenSideView(GraveyardView);
                 else if (cmdn == "team" && mainView == GameView) OpenSideView(TeamView);
                 else if ((cmdn == "lw" || cmdn == "dn") && mainView == GameView) OpenSideView(LastWillView);
@@ -105,10 +106,11 @@ namespace ToSTextClient
                 string cmdn = cmd[1].ToLower();
                 if (cmdn == "help") CloseSideView(helpView);
                 else if (cmdn == "modes" && mainView == HomeView) CloseSideView(GameModeView);
-                else if (cmdn == "players" && mainView == GameView) CloseSideView(PlayerListView);
+                else if ((cmdn == "roles" || cmdn == "rolelist") && mainView == GameView) CloseSideView(RoleListView);
+                else if ((cmdn == "players" || cmdn == "playerlist") && mainView == GameView) CloseSideView(PlayerListView);
                 else if (cmdn == "graveyard" && mainView == GameView) CloseSideView(GraveyardView);
                 else if (cmdn == "team" && mainView == GameView) CloseSideView(TeamView);
-                else if ((cmdn == "lw" || cmdn == "dn") && mainView == GameView) CloseSideView(LastWillView);
+                else if ((cmdn == "lw" || cmdn == "dn" || cmdn == "lastwill" || cmdn == "deathnote") && mainView == GameView) CloseSideView(LastWillView);
                 else StatusLine = string.Format("View not found: {0}", cmd[1]);
             }), "close");
             RegisterCommand(new Command("", "Redraw the whole screen", ~CommandContext.NONE, cmd => RedrawAll()), "redraw");
@@ -164,9 +166,10 @@ namespace ToSTextClient
             }), "fw", "forgedwill");
             RegisterCommand(new Command("[Reason]", "Set your execute reason to [Reason]", CommandContext.GAME, cmd =>
             {
-                if (Enum.TryParse(string.Join("_", cmd, 1, cmd.Length).ToUpper(), out ExecuteReasonID reason)) game.Parser.SetJailorDeathNote(reason);
+                if (Enum.TryParse(string.Join("_", cmd, 1, cmd.Length - 1).ToUpper(), out ExecuteReasonID reason)) game.Parser.SetJailorDeathNote(reason);
                 else StatusLine = string.Format("Reason not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
             }), "jn", "jailornote");
+            RegisterCommand(new Command("", "Say your will in chat", CommandContext.GAME, cmd => game.Parser.SendChatBoxMessage(game.GameState.LastWill)), "slw", "saylw", "saylastwill");
             RegisterCommand(new Command("[Player] [Reason] <Message>", "Report [Player] for [Reason]", CommandContext.GAME, cmd =>
             {
                 int index = 1;
@@ -175,7 +178,7 @@ namespace ToSTextClient
                     if (Enum.TryParse(cmd[index++].ToUpper(), out ReportReasonID reason))
                     {
                         game.Parser.ReportPlayer(player, reason, string.Join(" ", cmd, index, cmd.Length - index));
-                        GameView.AppendLine("Reported {0} for {1}", game.GameState.ToName(player), reason.ToString().ToLower().Replace('_', ' '));
+                        GameView.AppendLine(("Reported {0} for {1}", ConsoleColor.Yellow, ConsoleColor.Black), game.GameState.ToName(player), reason.ToString().ToLower().Replace('_', ' '));
                     }
                     else StatusLine = string.Format("Reason not found: {0}", cmd[index - 1]);
                 }
@@ -276,13 +279,28 @@ namespace ToSTextClient
             lock (drawLock) if (sideViews.Remove(view)) RedrawSideViews();
         }
 
+        public void RedrawTimer()
+        {
+            if (game.GameState?.TimerText != null)
+            {
+                lock (drawLock)
+                {
+                    Console.CursorTop = cursorTop;
+                    Console.CursorLeft = mainWidth + 1;
+                    Console.Write(string.Format("{0}: {1}", game.GameState.TimerText, game.GameState.Timer).PadRightHard(sideWidth));
+                    ResetCursor();
+                }
+            }
+        }
+
         public void RedrawView(params IView[] views)
         {
             lock (drawLock)
             {
                 Console.CursorVisible = false;
                 if (views.Where(v => v == mainView).Any()) RedrawMainView();
-                RedrawSideView(views.Where(sideViews.Contains).ToArray());
+                views = views.Where(sideViews.Contains).ToArray();
+                if (views.Length > 0) RedrawSideView(views);
             }
         }
 
@@ -360,8 +378,6 @@ namespace ToSTextClient
             lock (drawLock)
             {
                 Console.CursorVisible = false;
-                int sideHeight = 0, lastSideHeight = 0;
-                int cw = consoleWidth ?? Console.BufferWidth - 1;
                 if (sideViews.Count > 0)
                 {
                     int maxMinWidth = 0;
@@ -372,6 +388,9 @@ namespace ToSTextClient
                         RedrawAll();
                         return;
                     }
+                    RedrawTimer();
+                    int sideHeight = 0, lastSideHeight = 1;
+                    int cw = consoleWidth ?? Console.BufferWidth - 1;
                     foreach (AbstractView view in sideViews)
                     {
                         Console.CursorLeft = cw - sideWidth;
@@ -399,17 +418,20 @@ namespace ToSTextClient
                     {
                         Console.CursorTop = sideStart;
                         Console.CursorLeft = mainWidth;
-                        Console.Write("".PadRight(sideWidth));
+                        Console.Write("".PadRight(sideWidth + 1));
                     }
                     sideStart = cursorTop - sideHeight;     // only has an effect if sideStart > cursorTop - sideHeight
                     //for (int currentLine = cursorTop - sideHeight; currentLine < cursorTop; currentLine++)
-                    for (int currentLine = cursorTop - Console.WindowHeight + 1; currentLine < cursorTop; currentLine++)
+                    for (int currentLine = cursorTop - Console.WindowHeight + 1; currentLine <= cursorTop; currentLine++)
                     {
                         Console.CursorTop = currentLine;
                         Console.CursorLeft = mainWidth;
                         Console.Write('|');
-                        Console.CursorLeft = cw - 1;
-                        Console.WriteLine();
+                        if (currentLine < cursorTop)
+                        {
+                            Console.CursorLeft = cw - 1;
+                            Console.WriteLine();
+                        }
                     }
                 }
                 else if (sideWidth > 0)
@@ -439,7 +461,7 @@ namespace ToSTextClient
             }
         }
 
-        protected void AppendLine(TextView view, string text)
+        protected void AppendLine(TextView view, FormattedString text)
         {
             lock (drawLock)
             {
@@ -457,13 +479,14 @@ namespace ToSTextClient
                     cursorTop = newCursorTop;
                     RedrawCursor();
                     int targetHeight = cursorTop - textHeight + sideStart + 1;
-                    Console.MoveBufferArea(mainWidth, sideStart, sideWidth + 1, textHeight - sideStart - 1, mainWidth, targetHeight);
-                    for (; sideStart < targetHeight; sideStart++)
+                    Console.MoveBufferArea(mainWidth, sideStart, sideWidth + 1, textHeight - sideStart, mainWidth, targetHeight);
+                    for (; sideStart <= targetHeight; sideStart++)
                     {
                         Console.CursorTop = sideStart;
                         Console.CursorLeft = mainWidth;
                         Console.Write("|");
                     }
+                    sideStart--;
                 }
                 ResetCursor();
             }
@@ -471,24 +494,22 @@ namespace ToSTextClient
 
         protected void ResetCursor()
         {
+            Console.CursorTop = cursorTop;      // Ensure that the screen shows the cursor line when in edit mode.
             if (willContext != null)
             {
                 willContext.MoveCursor(sideWidth, cursorTop);
                 return;
             }
-            Console.CursorTop = cursorTop;
             Console.CursorLeft = bufferIndex + 2;
             Console.CursorVisible = true;
         }
 
         protected void UpdateCommandMode()
         {
-            if (CommandContext.HasFlag(CommandContext.AUTHENTICATING) || CommandContext.HasFlag(CommandContext.HOME))
-            {
-                bool oldCommandMode = commandMode;
-                commandMode = true;
-                if (!oldCommandMode) RedrawCursor();
-            }
+            bool oldCommandMode = commandMode;
+            if (CommandContext.HasFlag(CommandContext.AUTHENTICATING) || CommandContext.HasFlag(CommandContext.HOME)) commandMode = true;
+            else if (bufferIndex == 0) commandMode = false;
+            if (commandMode != oldCommandMode) RedrawCursor();
         }
 
         protected string ReadUserInput()
@@ -525,7 +546,7 @@ namespace ToSTextClient
                                     RedrawView(willContext);
                                     break;
                                 }
-                                if (Console.CursorLeft + 1 >= Console.BufferWidth) break;
+                                if (Console.CursorLeft + 1 >= mainWidth) break;
                                 if (!commandMode && inputBuffer.Length == 0 && key.KeyChar == '/')
                                 {
                                     commandMode = true;
@@ -731,12 +752,12 @@ namespace ToSTextClient
 
     class TextView : AbstractView, ITextView
     {
-        public List<string> Lines { get; protected set; } = new List<string>();
+        public List<FormattedString> Lines { get; protected set; } = new List<FormattedString>();
 
         protected ITextUI ui;
-        protected Action<TextView, string> append;
+        protected Action<TextView, FormattedString> append;
 
-        public TextView(ITextUI ui, Action<TextView, string> append, int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight)
+        public TextView(ITextUI ui, Action<TextView, FormattedString> append, int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight)
         {
             this.ui = ui;
             this.append = append;
@@ -744,17 +765,17 @@ namespace ToSTextClient
 
         public override int GetFullHeight() => Math.Max(Lines.Count, minimumHeight);
 
-        public void AppendLine(string text) => append(this, text);
+        public void AppendLine(FormattedString text) => append(this, text);
 
-        public void AppendLine(string format, params object[] args) => append(this, string.Format(format, args));
+        public void AppendLine(FormattedString format, params object[] args) => append(this, format.Format(args));
 
-        public void ReplaceLine(int index, string text)
+        public void ReplaceLine(int index, FormattedString text)
         {
             Lines.SafeReplace(index, text);
             ui.RedrawView(this);
         }
 
-        public void ReplaceLine(int index, string format, params object[] args) => ReplaceLine(index, string.Format(format, args));
+        public void ReplaceLine(int index, FormattedString format, params object[] args) => ReplaceLine(index, format.Format(args));
 
         public void Clear()
         {
@@ -767,10 +788,13 @@ namespace ToSTextClient
             int cursorOffset = Console.CursorLeft;
             for (; startLine < Lines.Count; startLine++)
             {
-                Console.Write(Lines[startLine].PadRightHard(width));
+                Console.ForegroundColor = Lines[startLine].Foreground;
+                Console.BackgroundColor = Lines[startLine].Background;
+                Console.Write(Lines[startLine].Value.PadRightHard(width));
                 Console.CursorTop++;
                 Console.CursorLeft = cursorOffset;
             }
+            Console.ResetColor();
             while (startLine++ < minimumHeight)
             {
                 Console.Write("".PadRight(width));

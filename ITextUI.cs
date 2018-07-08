@@ -20,6 +20,7 @@ namespace ToSTextClient
         void SetMainView(IView view);
         void OpenSideView(IView view);
         void CloseSideView(IView view);
+        void RedrawTimer();
         void RedrawView(params IView[] views);
         void RedrawMainView();
         void RedrawSideViews();
@@ -31,10 +32,10 @@ namespace ToSTextClient
 
     interface ITextView : IView
     {
-        void AppendLine(string text);
-        void AppendLine(string format, params object[] args);
-        void ReplaceLine(int index, string text);
-        void ReplaceLine(int index, string format, params object[] args);
+        void AppendLine(FormattedString text);
+        void AppendLine(FormattedString format, params object[] args);
+        void ReplaceLine(int index, FormattedString text);
+        void ReplaceLine(int index, FormattedString format, params object[] args);
         void Clear();
     }
 
@@ -44,6 +45,38 @@ namespace ToSTextClient
     {
         string Title { get; set; }
         string Value { get; set; }
+    }
+
+    struct FormattedString
+    {
+        public string Value { get; }
+        public ConsoleColor Foreground { get; }
+        public ConsoleColor Background { get; }
+
+        public FormattedString(string value)
+        {
+            Value = value;
+            Foreground = ConsoleColor.White;
+            Background = ConsoleColor.Black;
+        }
+
+        public FormattedString(string value, ConsoleColor bg)
+        {
+            Value = value;
+            Foreground = ConsoleColor.White;
+            Background = bg;
+        }
+
+        public FormattedString(string value, ConsoleColor fg, ConsoleColor bg)
+        {
+            Value = value;
+            Foreground = fg;
+            Background = bg;
+        }
+
+        public static implicit operator FormattedString(string value) => new FormattedString(value);
+        public static implicit operator FormattedString((string value, ConsoleColor bg) value) => new FormattedString(value.value, value.bg);
+        public static implicit operator FormattedString((string value, ConsoleColor fg, ConsoleColor bg) value) => new FormattedString(value.value, value.fg, value.bg);
     }
 
     class Command

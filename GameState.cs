@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using ToSParser;
 
 namespace ToSTextClient
@@ -27,7 +28,7 @@ namespace ToSTextClient
             set
             {
                 game.UI.CommandContext = (game.UI.CommandContext & ~CommandContext.NIGHT) | CommandContext.DAY;
-                game.UI.GameView.AppendLine("Day {0}", _Day = value);
+                game.UI.GameView.AppendLine(("Day {0}", ConsoleColor.Black, ConsoleColor.White), _Day = value);
             }
         }
         public int Night
@@ -36,14 +37,14 @@ namespace ToSTextClient
             set
             {
                 game.UI.CommandContext = (game.UI.CommandContext & ~CommandContext.DAY) | CommandContext.NIGHT;
-                game.UI.GameView.AppendLine("Night {0}", _Night = value);
+                game.UI.GameView.AppendLine(("Night {0}", ConsoleColor.Black, ConsoleColor.White), _Night = value);
             }
         }
         public int AbilitiesLeft { get; set; }
         public bool Host
         {
             get => _Host;
-            set { if (_Host != value) { game.UI.SetCommandContext(CommandContext.HOST, _Host = value); game.UI.GameView.AppendLine((_Host = value) ? "You are now host" : "You are no longer host"); } }
+            set { if (_Host != value) { game.UI.SetCommandContext(CommandContext.HOST, _Host = value); game.UI.GameView.AppendLine(((_Host = value) ? "You are now host" : "You are no longer host", ConsoleColor.Green, ConsoleColor.Black)); } }
         }
         public PlayerID? HostID
         {
@@ -65,6 +66,16 @@ namespace ToSTextClient
             get => _ForgedWill;
             set { game.Parser.SaveForgedWill(_ForgedWill = value); }
         }
+        public int Timer
+        {
+            get => _Timer;
+            set { if ((_Timer = value) >= 0) game.UI.RedrawTimer(); }
+        }
+        public string TimerText
+        {
+            get => _TimerText;
+            set { _TimerText = value; Task.Run(UpdateTimer); game.UI.RedrawTimer(); }
+        }
 
         protected TextClient game;
         protected RoleID _Role;
@@ -76,6 +87,9 @@ namespace ToSTextClient
         protected string _LastWill = "";
         protected string _DeathNote = "";
         protected string _ForgedWill = "";
+        protected int _Timer;
+        protected string _TimerText;
+        protected volatile int timerIndex;
 
         public GameState(TextClient game, GameModeID gameMode)
         {
@@ -93,12 +107,12 @@ namespace ToSTextClient
             HostID = null;
             game.UI.CommandContext = CommandContext.GAME | CommandContext.PICK_NAMES;
             game.UI.RedrawSideViews();
-            game.UI.GameView.AppendLine("Please choose a name (or wait to get a random name)");
+            game.UI.GameView.AppendLine(("Please choose a name (or wait to get a random name)", ConsoleColor.Green, ConsoleColor.Black));
         }
 
         public void AddPlayer(PlayerID player, bool host, bool display, string username, LobbyIconID lobbyIcon)
         {
-            if (display) game.UI.GameView.AppendLine("{0} has joined the game", username);
+            if (display) game.UI.GameView.AppendLine(("{0} has joined the game", ConsoleColor.Green, ConsoleColor.Black), username);
             if (host) HostID = player;
             PlayerState playerState = Players[(int)player];
             playerState.Name = username;
@@ -107,7 +121,7 @@ namespace ToSTextClient
 
         public void RemovePlayer(PlayerID player, bool update, bool display)
         {
-            if (display) game.UI.GameView.AppendLine("{0} has left the game", ToName(player));
+            if (display) game.UI.GameView.AppendLine(("{0} has left the game", ConsoleColor.Green, ConsoleColor.Black), ToName(player));
             if (update)
             {
                 for (int index = (int)player + 1; index < Players.Length; index++)
@@ -198,6 +212,11 @@ namespace ToSTextClient
         {
             for (int index = 0; index < Players.Length; index++) Players[index] = new PlayerState(this, (PlayerID)index);
         }
+
+        private async Task UpdateTimer()
+        {
+            for (int thisInc = ++timerIndex; timerIndex == thisInc && Timer > 0; Timer--) await Task.Delay(1000);
+        }
     }
 
     class PlayerState
@@ -221,7 +240,7 @@ namespace ToSTextClient
         public bool Dead
         {
             get { return _Dead; }
-            set { if (_Dead = value) game.UI.GameView.AppendLine("{0} died", game.ToName(Self)); game.Graveyard.Add(this); game.UI.RedrawView(game.UI.GraveyardView, game.UI.TeamView); }
+            set { if (_Dead = value) game.UI.GameView.AppendLine(("{0} died", ConsoleColor.DarkRed), game.ToName(Self)); game.Graveyard.Add(this); game.UI.RedrawView(game.UI.GraveyardView, game.UI.TeamView); }
         }
         public bool Left
         {
