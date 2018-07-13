@@ -5,6 +5,7 @@ namespace ToSTextClient
 {
     interface ITextUI
     {
+        GameState GameState { get; }
         ITextView HomeView { get; }
         IListView<GameModeID> GameModeView { get; }
         ITextView GameView { get; }
@@ -77,25 +78,6 @@ namespace ToSTextClient
         public static implicit operator FormattedString(string value) => new FormattedString(value);
         public static implicit operator FormattedString((string value, ConsoleColor bg) value) => new FormattedString(value.value, value.bg);
         public static implicit operator FormattedString((string value, ConsoleColor fg, ConsoleColor bg) value) => new FormattedString(value.value, value.fg, value.bg);
-    }
-
-    class Command
-    {
-        public string UsageLine { get; protected set; }
-        public string Description { get; protected set; }
-        public CommandContext UsableContexts { get; protected set; }
-
-        protected Action<string[]> runner;
-
-        public Command(string usageLine, string description, CommandContext usableContexts, Action<string[]> runner)
-        {
-            UsageLine = usageLine;
-            Description = description;
-            UsableContexts = usableContexts;
-            this.runner = runner;
-        }
-
-        public void Run(string[] cmd) => runner(cmd);
     }
 
     [Flags]

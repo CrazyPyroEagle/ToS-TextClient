@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Optional;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -35,6 +36,7 @@ namespace ToSTextClient
         protected Dictionary<string, Command> commands;
         protected volatile bool _RunInput = true;
 
+        public GameState GameState { get => game.GameState; }
         public ITextView HomeView { get; protected set; }
         public IListView<GameModeID> GameModeView { get; protected set; }
         public ITextView GameView { get; protected set; }
@@ -88,42 +90,27 @@ namespace ToSTextClient
             hiddenSideViews.Add(mainView, sideViews);
             hiddenSideViews.Add((AbstractView)GameView, gameSideViews);
 
-            RegisterCommand(new Command("", "View a list of available commands", ~CommandContext.NONE, cmd => OpenSideView(helpView)), "help", "?");
-            RegisterCommand(new Command("[View]", "Open the [View] view", ~CommandContext.NONE, cmd =>
+            RegisterCommand(new Command("View a list of available commands", ~CommandContext.NONE, cmd => OpenSideView(helpView)), "help", "?");
+            RegisterCommand(new CommandGroup("Open the {0} view", ~CommandContext.NONE, this, "View")
+                .Register(new Command("Open the help view", ~CommandContext.NONE, cmd => OpenSideView(helpView)), "help")
+                .Register(new Command("Open the game modes view", CommandContext.HOME, cmd => OpenSideView(GameModeView)), "modes")
+                .Register(new Command("Open the role list view", CommandContext.LOBBY | CommandContext.GAME, cmd => OpenSideView(RoleListView)), "roles", "rolelist")
+                .Register(new Command("Open the player list view", CommandContext.LOBBY | CommandContext.GAME, cmd => OpenSideView(PlayerListView)), "players", "playerlist")
+                .Register(new Command("Open the graveyard view", CommandContext.GAME, cmd => OpenSideView(GraveyardView)), "graveyard")
+                .Register(new Command("Open the team view", CommandContext.GAME, cmd => OpenSideView(TeamView)), "team")
+                .Register(new Command("Open the LW/DN view", CommandContext.GAME, cmd => OpenSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "open");
+            RegisterCommand(new CommandGroup("Close the {0} view", ~CommandContext.NONE, this, "View")
+                .Register(new Command("Close the help view", ~CommandContext.NONE, cmd => CloseSideView(helpView)), "help")
+                .Register(new Command("Close the game modes view", CommandContext.HOME, cmd => CloseSideView(GameModeView)), "modes")
+                .Register(new Command("Close the role list view", CommandContext.LOBBY | CommandContext.GAME, cmd => CloseSideView(RoleListView)), "roles", "rolelist")
+                .Register(new Command("Close the player list view", CommandContext.LOBBY | CommandContext.GAME, cmd => CloseSideView(PlayerListView)), "players", "playerlist")
+                .Register(new Command("Close the graveyard view", CommandContext.GAME, cmd => CloseSideView(GraveyardView)), "graveyard")
+                .Register(new Command("Close the team view", CommandContext.GAME, cmd => CloseSideView(TeamView)), "team")
+                .Register(new Command("Close the LW/DN view", CommandContext.GAME, cmd => CloseSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "close");
+            RegisterCommand(new Command("Redraw the whole screen", ~CommandContext.NONE, cmd => RedrawAll()), "redraw");
+            RegisterCommand(new Command<Option<PlayerID>>("Edit your LW or view {0}'s", CommandContext.GAME, ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
             {
-                string cmdn = cmd[1].ToLower();
-                if (cmdn == "help") OpenSideView(helpView);
-                else if (cmdn == "modes" && mainView == HomeView) OpenSideView(GameModeView);
-                else if ((cmdn == "roles" || cmdn == "rolelist") && mainView == GameView) OpenSideView(RoleListView);
-                else if ((cmdn == "players" || cmdn == "playerlist") && mainView == GameView) OpenSideView(PlayerListView);
-                else if (cmdn == "graveyard" && mainView == GameView) OpenSideView(GraveyardView);
-                else if (cmdn == "team" && mainView == GameView) OpenSideView(TeamView);
-                else if ((cmdn == "lw" || cmdn == "dn") && mainView == GameView) OpenSideView(LastWillView);
-                else StatusLine = string.Format("View not found in current context: {0}", cmd[1]);
-            }), "open");
-            RegisterCommand(new Command("[View]", "Close the [View] view", ~CommandContext.NONE, cmd =>
-            {
-                string cmdn = cmd[1].ToLower();
-                if (cmdn == "help") CloseSideView(helpView);
-                else if (cmdn == "modes" && mainView == HomeView) CloseSideView(GameModeView);
-                else if ((cmdn == "roles" || cmdn == "rolelist") && mainView == GameView) CloseSideView(RoleListView);
-                else if ((cmdn == "players" || cmdn == "playerlist") && mainView == GameView) CloseSideView(PlayerListView);
-                else if (cmdn == "graveyard" && mainView == GameView) CloseSideView(GraveyardView);
-                else if (cmdn == "team" && mainView == GameView) CloseSideView(TeamView);
-                else if ((cmdn == "lw" || cmdn == "dn" || cmdn == "lastwill" || cmdn == "deathnote") && mainView == GameView) CloseSideView(LastWillView);
-                else StatusLine = string.Format("View not found: {0}", cmd[1]);
-            }), "close");
-            RegisterCommand(new Command("", "Redraw the whole screen", ~CommandContext.NONE, cmd => RedrawAll()), "redraw");
-            RegisterCommand(new Command("<Player>", "Edit your LW or view <Player>'s", CommandContext.GAME, cmd =>
-            {
-                int index = 1;
-                if (cmd.Length == 1)
-                {
-                    OpenSideView(myLastWillView);
-                    willContext = myLastWillView;
-                    RedrawCursor();
-                }
-                else if (game.GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
+                opTarget.Match(target =>
                 {
                     PlayerState ps = game.GameState.Players[(int)target];
                     if (ps.Dead)
@@ -133,57 +120,39 @@ namespace ToSTextClient
                         OpenSideView(LastWillView);
                     }
                     else StatusLine = string.Format("{0} isn't dead, so you can't see their last will", game.GameState.ToName(target));
-                }
-                else StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
-            }), "lw", "lastwill");
-            RegisterCommand(new Command("<Player>", "Edit your DN or view <Player>'s", CommandContext.GAME, cmd =>
-            {
-                int index = 1;
-                if (cmd.Length == 1)
+                }, () =>
                 {
-                    OpenSideView(myDeathNoteView);
-                    willContext = myDeathNoteView;
+                    OpenSideView(myLastWillView);
+                    willContext = myLastWillView;
                     RedrawCursor();
-                }
-                else if (game.GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
+                });
+            }), "lw", "lastwill");
+            RegisterCommand(new Command<Option<PlayerID>>("Edit your DN or view {0}'s", CommandContext.GAME, ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
+            {
+                opTarget.Match(target =>
                 {
                     PlayerState ps = game.GameState.Players[(int)target];
                     if (ps.Dead)
                     {
                         LastWillView.Title = string.Format(" # (DN) {0}", game.GameState.ToName(target));
-                        LastWillView.Value = ps.DeathNote;
+                        LastWillView.Value = ps.LastWill;
                         OpenSideView(LastWillView);
                     }
                     else StatusLine = string.Format("{0} isn't dead, so you can't see their killer's death note", game.GameState.ToName(target));
-                }
-                else StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+                }, () =>
+                {
+                    OpenSideView(myLastWillView);
+                    willContext = myLastWillView;
+                    RedrawCursor();
+                });
             }), "dn", "deathnote");
-            RegisterCommand(new Command("", "Edit your forged will", CommandContext.GAME, cmd =>
+            RegisterCommand(new Command("Edit your forged will", CommandContext.GAME, cmd =>
             {
                 OpenSideView(myForgedWillView);
                 willContext = myForgedWillView;
                 RedrawCursor();
             }), "fw", "forgedwill");
-            RegisterCommand(new Command("[Reason]", "Set your execute reason to [Reason]", CommandContext.GAME, cmd =>
-            {
-                if (Enum.TryParse(string.Join("_", cmd, 1, cmd.Length - 1).ToUpper(), out ExecuteReasonID reason)) game.Parser.SetJailorDeathNote(reason);
-                else StatusLine = string.Format("Reason not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
-            }), "jn", "jailornote");
-            RegisterCommand(new Command("", "Say your will in chat", CommandContext.GAME, cmd => game.Parser.SendChatBoxMessage(game.GameState.LastWill)), "slw", "saylw", "saylastwill");
-            RegisterCommand(new Command("[Player] [Reason] <Message>", "Report [Player] for [Reason]", CommandContext.GAME, cmd =>
-            {
-                int index = 1;
-                if (game.GameState.TryParsePlayer(cmd, ref index, out PlayerID player, false))
-                {
-                    if (Enum.TryParse(cmd[index++].ToUpper(), out ReportReasonID reason))
-                    {
-                        game.Parser.ReportPlayer(player, reason, string.Join(" ", cmd, index, cmd.Length - index));
-                        GameView.AppendLine(("Reported {0} for {1}", ConsoleColor.Yellow, ConsoleColor.Black), game.GameState.ToName(player), reason.ToString().ToLower().Replace('_', ' '));
-                    }
-                    else StatusLine = string.Format("Reason not found: {0}", cmd[index - 1]);
-                }
-                else StatusLine = "Player not found";
-            }), "report");
+            RegisterCommand(new Command("Say your will in chat", CommandContext.GAME, cmd => game.Parser.SendChatBoxMessage(game.GameState.LastWill)), "slw", "saylw", "saylastwill");
         }
 
         public void Run()
@@ -211,7 +180,7 @@ namespace ToSTextClient
                             string cmdn = cmd[0].ToLower();
                             if (commands.TryGetValue(cmdn, out Command command))
                             {
-                                if ((command.UsableContexts & _CommandContext) != 0) command.Run(cmd);
+                                if ((command.UsableContexts & _CommandContext) != 0) command.Run(cmdn, cmd, 1);
                                 else StatusLine = string.Format("Command not allowed in the current context: {0}", cmdn);
                             }
                             else StatusLine = string.Format("Command not found: {0}", cmdn);

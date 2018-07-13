@@ -15,7 +15,7 @@ namespace ToSTextClient
 {
     class TextClient
     {
-        public const uint BUILD_NUMBER = 9069u;
+        public const uint BUILD_NUMBER = 9069u;     // Live = 9069 / PTR = 9266
         private static readonly byte[] MODULUS = new byte[] { 0xce, 0x22, 0x31, 0xcc, 0xc2, 0x33, 0xed, 0x95, 0xf8, 0x28, 0x6e, 0x77, 0xd7, 0xb4, 0xa6, 0x55, 0xe0, 0xad, 0xf5, 0x26, 0x08, 0x7b, 0xff, 0xaa, 0x2f, 0x78, 0x6a, 0x3f, 0x93, 0x54, 0x5f, 0x48, 0xb5, 0x89, 0x39, 0x83, 0xef, 0x1f, 0x61, 0x15, 0x1f, 0x18, 0xa0, 0xe1, 0xdd, 0x02, 0xa7, 0x42, 0x27, 0x77, 0x71, 0x8b, 0x79, 0xe9, 0x90, 0x8b, 0x0e, 0xe8, 0x4a, 0x33, 0xd2, 0x5d, 0xde, 0x1f, 0xb4, 0x7d, 0xf4, 0x35, 0xf5, 0xea, 0xf6, 0xe7, 0x04, 0x2c, 0xaf, 0x03, 0x71, 0xe4, 0x6f, 0x50, 0x7f, 0xd2, 0x70, 0x70, 0x39, 0xee, 0xa6, 0x0a, 0xae, 0xf7, 0xbc, 0x17, 0x51, 0x81, 0xf1, 0xd4, 0xf1, 0x33, 0x85, 0xf4, 0xab, 0x54, 0x3b, 0x1e, 0x42, 0x56, 0xa4, 0x79, 0xd1, 0x4e, 0xcc, 0xb4, 0xaa, 0xaa, 0x73, 0xa3, 0x35, 0xf4, 0xe6, 0x57, 0x66, 0xe6, 0x52, 0x0e, 0x51, 0x8b, 0x7e, 0x26, 0xe8, 0x63, 0xdf, 0x58, 0x57, 0x6b, 0x87, 0xdd, 0xd5, 0xf2, 0xb0, 0x58, 0x73, 0x7b, 0x10, 0x99, 0x5a, 0x99, 0x80, 0xe3, 0x8d, 0xde, 0x57, 0x98, 0xac, 0x9a, 0xf8, 0xf7, 0x37, 0x2c, 0x6f, 0x46, 0x4f, 0xf8, 0xba, 0xc8, 0x59, 0x57, 0x9d, 0x2f, 0xac, 0x38, 0xd8, 0x88, 0x89, 0xcd, 0x12, 0x3e, 0x08, 0x09, 0xb4, 0xcd, 0x5d, 0x05, 0x0b, 0x16, 0xce, 0x80, 0x6a, 0x19, 0xad, 0xea, 0xa9, 0xa2, 0x6c, 0x40, 0xba, 0x6d, 0x19, 0x74, 0x4b, 0x84, 0xd9, 0x46, 0xdc, 0xee, 0x93, 0x66, 0xb7, 0x4e, 0x98, 0xa7, 0x2c, 0x9a, 0x28, 0x0d, 0x3b, 0x7d, 0xb3, 0x90, 0x6f, 0x45, 0x18, 0x7c, 0x0c, 0xb1, 0x59, 0x5a, 0xb9, 0x16, 0xa2, 0x38, 0x2b, 0xcd, 0x2d, 0x2c, 0x48, 0xd7, 0x0d, 0xcc, 0xf0, 0x17, 0x60, 0x5c, 0x93, 0x39, 0x81, 0x28, 0xbd, 0x65, 0x8a, 0x5b, 0xb4, 0xe0, 0x51, 0x87, 0xc0, 0x77 };
         private static readonly byte[] EXPONENT = new byte[] { 0x01, 0x00, 0x01 };
 
@@ -92,92 +92,59 @@ namespace ToSTextClient
             {
                 CommandContext = CommandContext.AUTHENTICATING
             };
-            UI.RegisterCommand(new Command("[Game Mode]", "Join a lobby for [Game Mode]", CommandContext.HOME, cmd =>
+            UI.RegisterCommand(new Command<GameModeID>("Join a lobby for {0}", CommandContext.HOME, ArgumentParsers.GameMode(UI), (cmd, gameMode) =>
             {
-                if (Enum.TryParse(string.Join("_", cmd, 1, cmd.Length - 1).ToUpper(), out GameModeID gameMode) && ActiveGameModes.Contains(gameMode)) Parser.JoinLobby(gameMode);
-                else UI.StatusLine = string.Format("Cannot join game mode: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+                if (ActiveGameModes.Contains(gameMode)) Parser.JoinLobby(gameMode);
+                else UI.StatusLine = string.Format("Cannot join game mode: {0}", gameMode.ToString().ToDisplayName());
             }), "join");
-            UI.RegisterCommand(new Command("", "Exit the game", CommandContext.AUTHENTICATING | CommandContext.HOME, cmd => UI.RunInput = false), "quit", "exit");
-            UI.RegisterCommand(new Command("", "Leave the game", CommandContext.LOBBY | CommandContext.GAME, cmd => Parser.LeaveGame()), "leave");
-            UI.RegisterCommand(new Command("", "Leave the post-game lobby", CommandContext.POST_GAME, cmd => Parser.LeavePostGameLobby()), "leavepost");
-            UI.RegisterCommand(new Command("", "Vote to repick the host", CommandContext.LOBBY, cmd => Parser.VoteToRepickHost()), "repick");
-            UI.RegisterCommand(new Command("[Role]", "Add [Role] to the role list", CommandContext.HOST, cmd =>
+            UI.RegisterCommand(new Command("Exit the game", CommandContext.AUTHENTICATING | CommandContext.HOME, cmd => UI.RunInput = false), "quit", "exit");
+            UI.RegisterCommand(new Command("Leave the game", CommandContext.LOBBY | CommandContext.GAME, cmd => Parser.LeaveGame()), "leave");
+            UI.RegisterCommand(new Command("Leave the post-game lobby", CommandContext.POST_GAME, cmd => Parser.LeavePostGameLobby()), "leavepost");
+            UI.RegisterCommand(new Command("Vote to repick the host", CommandContext.LOBBY, cmd => Parser.VoteToRepickHost()), "repick");
+            UI.RegisterCommand(new Command<RoleID>("Add {0} to the role list", CommandContext.HOST, ArgumentParsers.Role(UI), (cmd, role) =>
             {
-                if (Enum.TryParse(string.Join("_", cmd, 1, cmd.Length - 1).ToUpper(), out RoleID role))
-                {
-                    Parser.ClickedOnAddButton(role);
-                    GameState.AddRole(role);
-                }
-                else UI.StatusLine = string.Format("Invalid role: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+                Parser.ClickedOnAddButton(role);
+                GameState.AddRole(role);
             }), "add");
-            UI.RegisterCommand(new Command("[Position]", "Remove [Position] from the role list", CommandContext.HOST, cmd =>
+            UI.RegisterCommand(new Command<byte>("Remove {0} from the role list", CommandContext.HOST, ArgumentParsers.Position(UI), (cmd, position) =>
             {
-                if (byte.TryParse(cmd[1], out byte slot))
-                {
-                    Parser.ClickedOnRemoveButton(--slot);
-                    GameState.RemoveRole(slot);
-                }
-                else UI.StatusLine = string.Format("Invalid slot number: {0}", cmd[1]);
+                Parser.ClickedOnRemoveButton(position);
+                GameState.RemoveRole(position);
             }), "remove");
-            UI.RegisterCommand(new Command("", "Force the game to start", CommandContext.HOST, cmd => Parser.ClickedOnStartButton()), "start");
-            UI.RegisterCommand(new Command("[Name]", "Set your name to [Name]", CommandContext.PICK_NAMES, cmd => Parser.ChooseName(string.Join(" ", cmd, 1, cmd.Length - 1))), "n", "name");
-            UI.RegisterCommand(new Command("[Player]", "Set your target to [Player]", CommandContext.NIGHT, cmd =>
+            UI.RegisterCommand(new Command("Force the game to start", CommandContext.HOST, cmd => Parser.ClickedOnStartButton()), "start");
+            UI.RegisterCommand(new Command<string>("Set your name to {0}", CommandContext.PICK_NAMES, ArgumentParsers.Text(UI, "Name"), (cmd, name) => Parser.ChooseName(name)), "n", "name");
+            UI.RegisterCommand(new Command<PlayerID>("Set your target to {0}", CommandContext.NIGHT, ArgumentParsers.Player(UI), (cmd, target) =>
             {
-                int index = 1;
-                if (GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
-                {
-                    Parser.SetTarget(target);
-                    if (GameState.Role.IsMafia()) Parser.SetTargetMafiaOrWitch(target, target == PlayerID.JAILOR ? TargetType.CANCEL_TARGET_1 : TargetType.SET_TARGET_1);
-                    UI.GameView.AppendLine(target == PlayerID.JAILOR ? "Unset target" : "Set target to {0}", GameState.ToName(target));
-                }
-                else UI.StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+                // TODO: Add check for whether <target> is a valid target for the user's role
+                Parser.SetTarget(target);
+                if (GameState.Role.IsMafia()) Parser.SetTargetMafiaOrWitch(target, target == PlayerID.JAILOR ? TargetType.CANCEL_TARGET_1 : TargetType.SET_TARGET_1);
+                UI.GameView.AppendLine(target == PlayerID.JAILOR ? "Unset target" : "Set target to {0}", GameState.ToName(target));
             }), "t", "target");
-            UI.RegisterCommand(new Command("[Player]", "Set your second target to [Player]", CommandContext.NIGHT, cmd =>
+            UI.RegisterCommand(new Command<PlayerID>("Set your second target to {0}", CommandContext.NIGHT, ArgumentParsers.Player(UI), (cmd, target) =>
             {
-                int index = 1;
-                if (GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
-                {
-                    Parser.SetSecondTarget(target);
-                    if (GameState.Role.IsMafia()) Parser.SetTargetMafiaOrWitch(target, target == PlayerID.JAILOR ? TargetType.CANCEL_TARGET_2 : TargetType.SET_TARGET_2);
-                    UI.GameView.AppendLine(target == PlayerID.JAILOR ? "Unset secondary target" : "Set secondary target to {0}", GameState.ToName(target));
-                }
-                else UI.StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+                // TODO: Add check for whether <target> is a valid second target for the user's role
+                Parser.SetSecondTarget(target);
+                if (GameState.Role.IsMafia()) Parser.SetTargetMafiaOrWitch(target, target == PlayerID.JAILOR ? TargetType.CANCEL_TARGET_2 : TargetType.SET_TARGET_2);
+                UI.GameView.AppendLine(target == PlayerID.JAILOR ? "Unset secondary target" : "Set secondary target to {0}", GameState.ToName(target));
             }), "t2", "target2");
-            UI.RegisterCommand(new Command("[Player]", "Set your day choice to [Player]", CommandContext.DAY, cmd =>
+            UI.RegisterCommand(new Command<PlayerID>("Set your day choice to {0}", CommandContext.DAY, ArgumentParsers.Player(UI), (cmd, target) =>
             {
-
-                int index = 1;
-                if (GameState.TryParsePlayer(cmd, ref index, out PlayerID target))
-                {
-                    Parser.SetDayChoice(target);
-                    UI.GameView.AppendLine(target == PlayerID.JAILOR ? "Unset day target" : "Set day target to {0}", GameState.ToName(target));
-                }
-                else UI.StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
+                // TODO: Add check for whether <target> is a valid day choice for the user's role
+                Parser.SetDayChoice(target);
+                UI.GameView.AppendLine(target == PlayerID.JAILOR ? "Unset day target" : "Set day target to {0}", GameState.ToName(target));
             }), "td", "targetday");
-            UI.RegisterCommand(new Command("[Player]", "Vote [Player] up to the stand", CommandContext.VOTING, cmd =>
+            UI.RegisterCommand(new Command<PlayerID>("Vote {0} up to the stand", CommandContext.VOTING, ArgumentParsers.Player(UI), (cmd, target) => Parser.SetVote(target)), "v", "vote");
+            UI.RegisterCommand(new Command("Vote guilty", CommandContext.JUDGEMENT, cmd => Parser.JudgementVoteGuilty()), "g", "guilty");
+            UI.RegisterCommand(new Command("Vote innocent", CommandContext.JUDGEMENT, cmd => Parser.JudgementVoteInnocent()), "i", "innocent");
+            UI.RegisterCommand(new Command<PlayerID, string>("Whisper {1} to {0}", CommandContext.DAY, ArgumentParsers.Player(UI), ArgumentParsers.Text(UI, "Message"), (cmd, target, message) => Parser.SendPrivateMessage(target, message)), "w", "pm", "whisper");
+            UI.RegisterCommand(new Command<ExecuteReasonID>("Set your execute reason to [Reason]", CommandContext.GAME, ArgumentParsers.ExecuteReason(UI), (cmd, reason) => Parser.SetJailorDeathNote(reason)), "jn", "jailornote");
+            UI.RegisterCommand(new Command<PlayerID, ReportReasonID, string>("Report {0} for {1}", CommandContext.GAME, ArgumentParsers.Player(UI), ArgumentParsers.ReportReason(UI), ArgumentParsers.Text("Message"), (cmd, player, reason, message) =>
             {
-                int index = 1;
-                if (GameState.TryParsePlayer(cmd, ref index, out PlayerID target)) Parser.SetVote(target);
-                else UI.StatusLine = string.Format("Player not found: {0}", string.Join(" ", cmd, 1, cmd.Length - 1));
-            }), "v", "vote");
-            UI.RegisterCommand(new Command("", "Vote guilty", CommandContext.JUDGEMENT, cmd => Parser.JudgementVoteGuilty()), "g", "guilty");
-            UI.RegisterCommand(new Command("", "Vote innocent", CommandContext.JUDGEMENT, cmd => Parser.JudgementVoteInnocent()), "i", "innocent");
-            UI.RegisterCommand(new Command("[Player] <Message>", "Whisper <Message> to [Player]", CommandContext.DAY, cmd =>
-            {
-                int index = 1;
-                if (GameState.TryParsePlayer(cmd, ref index, out PlayerID target, false)) Parser.SendPrivateMessage(target, string.Join(" ", cmd, index, cmd.Length - index));
-                else UI.StatusLine = "Player not found";
-            }), "w", "pm", "whisper");
-            UI.RegisterCommand(new Command("[Command] <Parameters>", "Use the [Command] system command", ~CommandContext.NONE, cmd =>
-            {
-                string cmdn = cmd[1].ToLower();
-                if (cmdn == "setrole")     // LOBBY | PICK_NAMES
-                {
-                    if (Enum.TryParse(string.Join("_", cmd, 2, cmd.Length - 2).ToUpper(), out RoleID role)) Parser.SendSystemMessage(SystemCommandID.SET_ROLE, ((byte)role).ToString());
-                    else UI.StatusLine = string.Format("Invalid role: {0}", string.Join(" ", cmd, 2, cmd.Length - 2));
-                }
-                else UI.StatusLine = string.Format("Invalid subcommand: {0}", cmd[1]);
-            }), "system");
+                Parser.ReportPlayer(player, reason, message);
+                UI.GameView.AppendLine(("Reported {0} for {1}", ConsoleColor.Yellow, ConsoleColor.Black), GameState.ToName(player), reason.ToString().ToLower().Replace('_', ' '));
+            }), "report");
+            UI.RegisterCommand(new CommandGroup("Use the {0} system command", ~CommandContext.NONE, UI)
+                .Register(new Command<RoleID>("Set your role for this game", CommandContext.LOBBY | CommandContext.PICK_NAMES, ArgumentParsers.Role(UI), (cmd, role) => Parser.SendSystemMessage(SystemCommandID.SET_ROLE, ((byte)role).ToString())), "setrole"));
             UI.HomeView.ReplaceLine(0, "Authenticating...");
             UI.RedrawView(UI.HomeView);
             QueueReceive();

@@ -191,7 +191,7 @@ namespace ToSTextClient
             for (int length = args.Length - index; length > 0; length++)
             {
                 string value = string.Join(" ", args, index, length).ToLower();
-                if (value == "none")
+                if (allowNone && value == "none")
                 {
                     index += length;
                     player = PlayerID.JAILOR;
@@ -203,6 +203,27 @@ namespace ToSTextClient
                     player = ps.Self;
                     return true;
                 }
+            }
+            player = PlayerID.JAILOR;
+            return false;
+        }
+
+        public bool TryParsePlayer(string value, out PlayerID player)
+        {
+            if (byte.TryParse(value, out byte rawID))
+            {
+                player = (PlayerID)(rawID - 1);
+                return true;
+            }
+            if (value == "none")
+            {
+                player = PlayerID.JAILOR;
+                return true;
+            }
+            foreach (PlayerState ps in Players.Where(ps => ps.Name.ToLower() == value))
+            {
+                player = ps.Self;
+                return true;
             }
             player = PlayerID.JAILOR;
             return false;
