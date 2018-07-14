@@ -9,6 +9,9 @@ namespace ToSTextClient
     {
         public virtual string UsageLine { get => ""; }
         public virtual string Description { get => description; }
+        public virtual ArgumentParser[] Parsers { get => new ArgumentParser[0]; }
+        public virtual string SubcommandHeader { get => "Subcommands"; }
+        public virtual IReadOnlyDictionary<string, Command> Subcommands { get; } = new Dictionary<string, Command>();
         public CommandContext UsableContexts { get; protected set; }
 
         protected Action<string> runner;
@@ -29,6 +32,7 @@ namespace ToSTextClient
     {
         public override string UsageLine { get => parser1.DisplayName; }
         public override string Description { get => string.Format(description, parser1.DisplayName); }
+        public override ArgumentParser[] Parsers { get => new ArgumentParser[] { parser1 }; }
 
         protected ArgumentParser<T1> parser1;
         protected new Action<string, T1> runner;
@@ -47,6 +51,7 @@ namespace ToSTextClient
     {
         public override string UsageLine { get => string.Format("{0} {1}", parser1.DisplayName, parser2.DisplayName); }
         public override string Description { get => string.Format(description, parser1.DisplayName, parser2.DisplayName); }
+        public override ArgumentParser[] Parsers { get => new ArgumentParser[] { parser1, parser2 }; }
 
         protected ArgumentParser<T2> parser2;
         protected new Action<string, T1, T2> runner;
@@ -65,6 +70,7 @@ namespace ToSTextClient
     {
         public override string UsageLine { get => string.Format("{0} {1} {2}", parser1.DisplayName, parser2.DisplayName, parser3.DisplayName); }
         public override string Description { get => string.Format(description, parser1.DisplayName, parser2.DisplayName, parser3.DisplayName); }
+        public override ArgumentParser[] Parsers { get => new ArgumentParser[] { parser1, parser2, parser3 }; }
 
         protected ArgumentParser<T3> parser3;
         protected new Action<string, T1, T2, T3> runner;
@@ -83,19 +89,29 @@ namespace ToSTextClient
     {
         public override string UsageLine { get => string.Format("[{0}]", subName); }
         public override string Description { get => string.Format(description, string.Format("[{0}]", subName)); }
+        public override string SubcommandHeader { get => subPlural; }
+        public override IReadOnlyDictionary<string, Command> Subcommands { get => (IReadOnlyDictionary<string, Command>)commands; }
 
         protected IDictionary<string, Command> commands = new Dictionary<string, Command>();
         protected ITextUI ui;
         protected string subName;
+        protected string subPlural;
 
-        public CommandGroup(string description, CommandContext usableContexts, ITextUI ui, string subName = "Subcommand") : base(description, usableContexts)
+        public CommandGroup(string description, CommandContext usableContexts, ITextUI ui, string subName = "Subcommand", string subPlural = "Subcommands", Action<string> runner = null) : base(description, usableContexts, runner)
         {
             this.ui = ui;
             this.subName = subName;
+            this.subPlural = subPlural;
         }
 
         public override void Run(string cmd, string[] args, int index)
         {
+            if (args.Length <= index)
+            {
+                if (runner == null) ui.StatusLine = "Missing parameters";
+                else runner(cmd);
+                return;
+            }
             string cmdn = args[index++].ToLower();
             if (commands.TryGetValue(cmdn, out Command command))
             {
@@ -112,21 +128,27 @@ namespace ToSTextClient
         }
     }
 
-    class ArgumentParser<Type>
+    class ArgumentParser
+    {
+        public string DisplayName { get; protected set; }
+        public string Description { get; protected set; }
+        protected Action onFailed;
+
+        protected ArgumentParser(string displayName, string description, Action onFailed)
+        {
+            DisplayName = displayName;
+            Description = description;
+            this.onFailed = onFailed;
+        }
+    }
+
+    class ArgumentParser<Type> : ArgumentParser
     {
         public delegate bool TryParser(string value, out Type result);
 
-        public string DisplayName { get; protected set; }
         public TryParser Parser { get; protected set; }
-
-        protected Action onFailed;
-
-        public ArgumentParser(string displayName, TryParser parser, Action onFailed = null)
-        {
-            DisplayName = displayName;
-            Parser = parser;
-            this.onFailed = onFailed;
-        }
+        
+        public ArgumentParser(string displayName, string description, TryParser parser, Action onFailed = null) : base(displayName, description, onFailed) => Parser = parser;
 
         public bool Parse(string[] args, ref int index, out Type result)
         {
@@ -146,7 +168,7 @@ namespace ToSTextClient
 
     static class ArgumentParsers
     {
-        public static ArgumentParser<string> Text(ITextUI ui, string name) => new ArgumentParser<string>(string.Format("[{0}]", name), (string value, out string copy) =>
+        public static ArgumentParser<string> Text(ITextUI ui, string name) => new ArgumentParser<string>(string.Format("[{0}]", name), "Non-empty text body", (string value, out string copy) =>
         {
             if (value.Length == 0)
             {
@@ -156,20 +178,20 @@ namespace ToSTextClient
             copy = value;
             return true;
         }, () => ui.StatusLine = string.Format("{0} cannot be empty", name));
-        public static ArgumentParser<string> Text(string name) => new ArgumentParser<string>(string.Format("<{0}>", name), (string value, out string copy) =>
+        public static ArgumentParser<string> Text(string name) => new ArgumentParser<string>(string.Format("<{0}>", name), "Text body", (string value, out string copy) =>
         {
             copy = value;
             return true;
         });
 
-        public static ArgumentParser<GameModeID> GameMode(ITextUI ui) => new ArgumentParser<GameModeID>("[Game Mode]", TryParseEnum, () => ui.StatusLine = "Invalid game mode");
-        public static ArgumentParser<RoleID> Role(ITextUI ui) => new ArgumentParser<RoleID>("[Role]", TryParseEnum, () => ui.StatusLine = "Invalid role");
-        public static ArgumentParser<PlayerID> Player(ITextUI ui) => new ArgumentParser<PlayerID>("[Player]", (string value, out PlayerID player) => ui.GameState.TryParsePlayer(value, out player), () => ui.StatusLine = "Invalid player");
-        public static ArgumentParser<ExecuteReasonID> ExecuteReason(ITextUI ui) => new ArgumentParser<ExecuteReasonID>("[Reason]", TryParseEnum, () => ui.StatusLine = "Invalid execute reason");
-        public static ArgumentParser<ReportReasonID> ReportReason(ITextUI ui) => new ArgumentParser<ReportReasonID>("[Reason]", TryParseEnum, () => ui.StatusLine = "Invalid report reason");
-        public static ArgumentParser<byte> Position(ITextUI ui) => new ArgumentParser<byte>("[Position]", ModifyResult<byte, byte>(byte.TryParse, b => (byte)(b - 1u)), () => ui.StatusLine = "Invalid position");
+        public static ArgumentParser<GameModeID> GameMode(ITextUI ui) => new ArgumentParser<GameModeID>("[Game Mode]", "The name or ID of a game mode", TryParseEnum, () => ui.StatusLine = "Invalid game mode");
+        public static ArgumentParser<RoleID> Role(ITextUI ui) => new ArgumentParser<RoleID>("[Role]", "The name or ID of a role", TryParseEnum, () => ui.StatusLine = "Invalid role");
+        public static ArgumentParser<PlayerID> Player(ITextUI ui) => new ArgumentParser<PlayerID>("[Player]", "The name or number of a player", (string value, out PlayerID player) => ui.GameState.TryParsePlayer(value, out player), () => ui.StatusLine = "Invalid player");
+        public static ArgumentParser<ExecuteReasonID> ExecuteReason(ITextUI ui) => new ArgumentParser<ExecuteReasonID>("[Reason]", "The name or ID of an execute reason", TryParseEnum, () => ui.StatusLine = "Invalid execute reason");
+        public static ArgumentParser<ReportReasonID> ReportReason(ITextUI ui) => new ArgumentParser<ReportReasonID>("[Reason]", "The name or ID of a report reason", TryParseEnum, () => ui.StatusLine = "Invalid report reason");
+        public static ArgumentParser<byte> Position(ITextUI ui) => new ArgumentParser<byte>("[Position]", "A position number", ModifyResult<byte, byte>(byte.TryParse, b => (byte)(b - 1u)), () => ui.StatusLine = "Invalid position");
 
-        public static ArgumentParser<Option<T>> Optional<T>(ArgumentParser<T> parser) => new ArgumentParser<Option<T>>(OptionalDisplay(parser.DisplayName), (string value, out Option<T> result) =>
+        public static ArgumentParser<Option<T>> Optional<T>(ArgumentParser<T> parser) => new ArgumentParser<Option<T>>(OptionalDisplay(parser.DisplayName), string.Format("{0} (optional)", parser.Description), (string value, out Option<T> result) =>
         {
             if (parser.Parser(value, out T rawResult)) result = rawResult.Some();
             else result = Option.None<T>();

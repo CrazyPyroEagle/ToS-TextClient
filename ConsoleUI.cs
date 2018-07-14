@@ -58,6 +58,8 @@ namespace ToSTextClient
         protected EditableWillView myForgedWillView;
         protected HelpView helpView;
 
+        protected CommandGroup helpCommand;
+
         public ConsoleUI(TextClient game)
         {
             this.game = game;
@@ -77,7 +79,7 @@ namespace ToSTextClient
             myLastWillView = new EditableWillView(" # My Last Will", lw => game.GameState.LastWill = lw);
             myDeathNoteView = new EditableWillView(" # My Death Note", dn => game.GameState.DeathNote = dn);
             myForgedWillView = new EditableWillView(" # My Forged Will", fw => game.GameState.ForgedWill = fw);
-            helpView = new HelpView(commands, () => _CommandContext, 40, 1);
+            helpView = new HelpView(commands, () => _CommandContext, () => OpenSideView(helpView), 40, 1);
 
             mainView = (AbstractView)HomeView;
             sideViews = new List<AbstractView>();
@@ -90,8 +92,8 @@ namespace ToSTextClient
             hiddenSideViews.Add(mainView, sideViews);
             hiddenSideViews.Add((AbstractView)GameView, gameSideViews);
 
-            RegisterCommand(new Command("View a list of available commands", ~CommandContext.NONE, cmd => OpenSideView(helpView)), "help", "?");
-            RegisterCommand(new CommandGroup("Open the {0} view", ~CommandContext.NONE, this, "View")
+            RegisterCommand(helpCommand = new CommandGroup("View a list of available commands", ~CommandContext.NONE, this, "Command", "Commands", cmd => helpView.Topic = null), "help", "?");
+            RegisterCommand(new CommandGroup("Open the {0} view", ~CommandContext.NONE, this, "View", "Views")
                 .Register(new Command("Open the help view", ~CommandContext.NONE, cmd => OpenSideView(helpView)), "help")
                 .Register(new Command("Open the game modes view", CommandContext.HOME, cmd => OpenSideView(GameModeView)), "modes")
                 .Register(new Command("Open the role list view", CommandContext.LOBBY | CommandContext.GAME, cmd => OpenSideView(RoleListView)), "roles", "rolelist")
@@ -99,7 +101,7 @@ namespace ToSTextClient
                 .Register(new Command("Open the graveyard view", CommandContext.GAME, cmd => OpenSideView(GraveyardView)), "graveyard")
                 .Register(new Command("Open the team view", CommandContext.GAME, cmd => OpenSideView(TeamView)), "team")
                 .Register(new Command("Open the LW/DN view", CommandContext.GAME, cmd => OpenSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "open");
-            RegisterCommand(new CommandGroup("Close the {0} view", ~CommandContext.NONE, this, "View")
+            RegisterCommand(new CommandGroup("Close the {0} view", ~CommandContext.NONE, this, "View", "Views")
                 .Register(new Command("Close the help view", ~CommandContext.NONE, cmd => CloseSideView(helpView)), "help")
                 .Register(new Command("Close the game modes view", CommandContext.HOME, cmd => CloseSideView(GameModeView)), "modes")
                 .Register(new Command("Close the role list view", CommandContext.LOBBY | CommandContext.GAME, cmd => CloseSideView(RoleListView)), "roles", "rolelist")
@@ -205,6 +207,7 @@ namespace ToSTextClient
         public void RegisterCommand(Command command, params string[] names)
         {
             foreach (string name in names) commands.Add(name, command);
+            helpCommand.Register(new Command(command.Description, command.UsableContexts, cmd => helpView.Topic = (command, names)), names);
             RedrawView(helpView);
         }
 
@@ -1029,19 +1032,29 @@ namespace ToSTextClient
 
     class HelpView : AbstractView
     {
+        public (Command cmd, string[] names)? Topic
+        {
+            get => _Topic;
+            set { _Topic = value; showHelp(); }
+        }
+
         protected readonly Dictionary<string, Command> commands;
         protected Func<CommandContext> getContext;
+        protected Action showHelp;
+        protected (Command cmd, string[] names)? _Topic;
 
-        public HelpView(Dictionary<string, Command> commands, Func<CommandContext> getContext, int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight)
+        public HelpView(Dictionary<string, Command> commands, Func<CommandContext> getContext, Action showHelp, int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight)
         {
             this.commands = commands;
             this.getContext = getContext;
+            this.showHelp = showHelp;
         }
 
         public override int GetFullHeight()
         {
             CommandContext context = getContext();
-            return commands.Values.Where(c => (c.UsableContexts & context) > 0).Distinct().Count() * 2 + 1;
+            int usableCommands = (_Topic == null ? commands : _Topic.Value.cmd.Subcommands).Values.Where(c => (c.UsableContexts & context) > 0).Distinct().Count() * 2;
+            return _Topic == null ? usableCommands + 1 : _Topic.Value.cmd.Parsers.Length * 2 + 2 + (usableCommands > 0 ? usableCommands + 1 : 0);
         }
 
         protected override int DrawUnsafe(int width, int startLine = 0)
@@ -1050,25 +1063,78 @@ namespace ToSTextClient
             int cursorOffset = Console.CursorLeft;
             if (startLine == 0)
             {
-                Console.Write(" # Help".PadRightHard(width));
+                Console.Write((_Topic == null ? " # Help" : string.Format(" # Help ({0})", string.Join(", ", _Topic?.names))).PadRightHard(width));
                 Console.CursorTop++;
                 Console.CursorLeft = cursorOffset;
             }
             else startLine--;
             int lineIndex = 0;
-            foreach (KeyValuePair<string, Command> command in commands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => (c.Value.UsableContexts & context) > 0))
+            if (_Topic == null)
+            {
+                foreach (KeyValuePair<string, Command> command in commands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => (c.Value.UsableContexts & context) > 0))
+                {
+                    if (++lineIndex > startLine)
+                    {
+                        Console.Write(string.Format("  /{0} {1}", command.Key, command.Value.UsageLine).PadRightHard(width));
+                        Console.CursorTop++;
+                        Console.CursorLeft = cursorOffset;
+                    }
+                    if (++lineIndex > startLine)
+                    {
+                        Console.Write(command.Value.Description.PadRightHard(width));
+                        Console.CursorTop++;
+                        Console.CursorLeft = cursorOffset;
+                    }
+                }
+            }
+            else
             {
                 if (++lineIndex > startLine)
                 {
-                    Console.Write(string.Format("  /{0} {1}", command.Key, command.Value.UsageLine).PadRightHard(width));
+                    Console.Write(_Topic.Value.cmd.Description.PadRightHard(width));
                     Console.CursorTop++;
                     Console.CursorLeft = cursorOffset;
                 }
-                if (++lineIndex > startLine)
+                foreach (ArgumentParser argument in _Topic.Value.cmd.Parsers)
                 {
-                    Console.Write(command.Value.Description.PadRightHard(width));
-                    Console.CursorTop++;
-                    Console.CursorLeft = cursorOffset;
+                    if (++lineIndex > startLine)
+                    {
+                        Console.Write(string.Format("  {0}", argument.DisplayName).PadRightHard(width));
+                        Console.CursorTop++;
+                        Console.CursorLeft = cursorOffset;
+                    }
+                    if (++lineIndex > startLine)
+                    {
+                        Console.Write(argument.Description.PadRightHard(width));
+                        Console.CursorTop++;
+                        Console.CursorLeft = cursorOffset;
+                    }
+                }
+                bool start = true;
+                foreach (KeyValuePair<string, Command> command in _Topic.Value.cmd.Subcommands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => (c.Value.UsableContexts & context) > 0))
+                {
+                    if (start)
+                    {
+                        if (++lineIndex > startLine)
+                        {
+                            Console.Write(string.Format(" ~ {0}", _Topic.Value.cmd.SubcommandHeader).PadRightHard(width));
+                            Console.CursorTop++;
+                            Console.CursorLeft = cursorOffset;
+                        }
+                        start = false;
+                    }
+                    if (++lineIndex > startLine)
+                    {
+                        Console.Write(string.Format("  {0} {1}", command.Key, command.Value.UsageLine).PadRightHard(width));
+                        Console.CursorTop++;
+                        Console.CursorLeft = cursorOffset;
+                    }
+                    if (++lineIndex > startLine)
+                    {
+                        Console.Write(command.Value.Description.PadRightHard(width));
+                        Console.CursorTop++;
+                        Console.CursorLeft = cursorOffset;
+                    }
                 }
             }
             startLine = lineIndex;
