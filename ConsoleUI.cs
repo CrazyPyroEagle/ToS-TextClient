@@ -38,10 +38,10 @@ namespace ToSTextClient
 
         public GameState GameState { get => game.GameState; }
         public ITextView HomeView { get; protected set; }
-        public IListView<GameModeID> GameModeView { get; protected set; }
+        public IListView<GameMode> GameModeView { get; protected set; }
         public ITextView GameView { get; protected set; }
         public IListView<PlayerState> PlayerListView { get; protected set; }
-        public IListView<RoleID> RoleListView { get; protected set; }
+        public IListView<Role> RoleListView { get; protected set; }
         public IListView<PlayerState> GraveyardView { get; protected set; }
         public IListView<PlayerState> TeamView { get; protected set; }
         public IWillView LastWillView { get; protected set; }
@@ -58,8 +58,6 @@ namespace ToSTextClient
         protected EditableWillView myForgedWillView;
         protected HelpView helpView;
 
-        protected CommandGroup helpCommand;
-
         public ConsoleUI(TextClient game)
         {
             this.game = game;
@@ -69,17 +67,17 @@ namespace ToSTextClient
             commands = new Dictionary<string, Command>();
 
             HomeView = new TextView(this, AppendLine, 60, 2);
-            GameModeView = new ListView<GameModeID>(" # Game Modes", () => game.ActiveGameModes, gm => gm.ToString().ToDisplayName(), 25);
+            GameModeView = new ListView<GameMode>(" # Game Modes", () => game.ActiveGameModes, gm => gm.ToString().ToDisplayName(), 25);
             GameView = new TextView(this, AppendLine, 60, 20);
             PlayerListView = new ListView<PlayerState>(" # Players", () => game.GameState.Players, p => p.Dead ? "" : game.GameState.ToName(p.Self, true), 25);
-            RoleListView = new ListView<RoleID>(" # Role List", () => game.GameState.Roles, r => r.ToString().ToDisplayName(), 25);
+            RoleListView = new ListView<Role>(" # Role List", () => game.GameState.Roles, r => r.ToString().ToDisplayName(), 25);
             GraveyardView = new ListView<PlayerState>(" # Graveyard", () => game.GameState.Graveyard, ps => game.GameState.ToName(ps, true), 40);
-            TeamView = new ListView<PlayerState>(" # Team", () => game.GameState.Team, ps => !ps.Dead || ps.Role == RoleID.DISGUISER ? game.GameState.ToName(ps, true) : "", 40);
+            TeamView = new ListView<PlayerState>(" # Team", () => game.GameState.Team, ps => !ps.Dead || ps.Role == Role.DISGUISER ? game.GameState.ToName(ps, true) : "", 40);
             LastWillView = new WillView();
             myLastWillView = new EditableWillView(" # My Last Will", lw => game.GameState.LastWill = lw);
             myDeathNoteView = new EditableWillView(" # My Death Note", dn => game.GameState.DeathNote = dn);
             myForgedWillView = new EditableWillView(" # My Forged Will", fw => game.GameState.ForgedWill = fw);
-            helpView = new HelpView(commands, () => _CommandContext, () => OpenSideView(helpView), 40, 1);
+            helpView = new HelpView(commands, () => _CommandContext, 40, 1);
 
             mainView = (AbstractView)HomeView;
             sideViews = new List<AbstractView>();
@@ -92,8 +90,13 @@ namespace ToSTextClient
             hiddenSideViews.Add(mainView, sideViews);
             hiddenSideViews.Add((AbstractView)GameView, gameSideViews);
 
-            RegisterCommand(helpCommand = new CommandGroup("View a list of available commands", ~CommandContext.NONE, this, "Command", "Commands", cmd => helpView.Topic = null), "help", "?");
-            RegisterCommand(new CommandGroup("Open the {0} view", ~CommandContext.NONE, this, "View", "Views")
+<<<<<<< HEAD
+            RegisterCommand(helpCommand = new CommandGroup("View a list of available commands", this, "Topic", "Topics", cmd => helpView.Topic = null, ~CommandContext.NONE), "help", "?");
+            RegisterCommand(new CommandGroup("Open the {0} view", this, "View", "Views")
+=======
+            RegisterCommand(new Command("View a list of available commands", ~CommandContext.NONE, cmd => OpenSideView(helpView)), "help", "?");
+            RegisterCommand(new CommandGroup("Open the {0} view", ~CommandContext.NONE, this, "View")
+>>>>>>> parent of 637b7c6... Add help pages for individual commands
                 .Register(new Command("Open the help view", ~CommandContext.NONE, cmd => OpenSideView(helpView)), "help")
                 .Register(new Command("Open the game modes view", CommandContext.HOME, cmd => OpenSideView(GameModeView)), "modes")
                 .Register(new Command("Open the role list view", CommandContext.LOBBY | CommandContext.GAME, cmd => OpenSideView(RoleListView)), "roles", "rolelist")
@@ -101,7 +104,11 @@ namespace ToSTextClient
                 .Register(new Command("Open the graveyard view", CommandContext.GAME, cmd => OpenSideView(GraveyardView)), "graveyard")
                 .Register(new Command("Open the team view", CommandContext.GAME, cmd => OpenSideView(TeamView)), "team")
                 .Register(new Command("Open the LW/DN view", CommandContext.GAME, cmd => OpenSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "open");
-            RegisterCommand(new CommandGroup("Close the {0} view", ~CommandContext.NONE, this, "View", "Views")
+<<<<<<< HEAD
+            RegisterCommand(new CommandGroup("Close the {0} view", this, "View", "Views")
+=======
+            RegisterCommand(new CommandGroup("Close the {0} view", ~CommandContext.NONE, this, "View")
+>>>>>>> parent of 637b7c6... Add help pages for individual commands
                 .Register(new Command("Close the help view", ~CommandContext.NONE, cmd => CloseSideView(helpView)), "help")
                 .Register(new Command("Close the game modes view", CommandContext.HOME, cmd => CloseSideView(GameModeView)), "modes")
                 .Register(new Command("Close the role list view", CommandContext.LOBBY | CommandContext.GAME, cmd => CloseSideView(RoleListView)), "roles", "rolelist")
@@ -110,7 +117,7 @@ namespace ToSTextClient
                 .Register(new Command("Close the team view", CommandContext.GAME, cmd => CloseSideView(TeamView)), "team")
                 .Register(new Command("Close the LW/DN view", CommandContext.GAME, cmd => CloseSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "close");
             RegisterCommand(new Command("Redraw the whole screen", ~CommandContext.NONE, cmd => RedrawAll()), "redraw");
-            RegisterCommand(new Command<Option<PlayerID>>("Edit your LW or view {0}'s", CommandContext.GAME, ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
+            RegisterCommand(new Command<Option<Player>>("Edit your LW or view {0}'s", CommandContext.GAME, ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
             {
                 opTarget.Match(target =>
                 {
@@ -129,7 +136,7 @@ namespace ToSTextClient
                     RedrawCursor();
                 });
             }), "lw", "lastwill");
-            RegisterCommand(new Command<Option<PlayerID>>("Edit your DN or view {0}'s", CommandContext.GAME, ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
+            RegisterCommand(new Command<Option<Player>>("Edit your DN or view {0}'s", CommandContext.GAME, ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
             {
                 opTarget.Match(target =>
                 {
@@ -206,8 +213,13 @@ namespace ToSTextClient
 
         public void RegisterCommand(Command command, params string[] names)
         {
-            foreach (string name in names) commands.Add(name, command);
+<<<<<<< HEAD
+            foreach (string name in names) commands[name] = command;
             helpCommand.Register(new Command(command.Description, command.UsableContexts, cmd => helpView.Topic = (command, names)), names);
+            foreach (ArgumentParser parser in command.Parsers) helpCommand.Register(new Command(parser.Description, ~CommandContext.NONE, cmd => helpView.Topic = (parser, parser.HelpNames)), parser.HelpNames);
+=======
+            foreach (string name in names) commands.Add(name, command);
+>>>>>>> parent of 637b7c6... Add help pages for individual commands
             RedrawView(helpView);
         }
 
@@ -1032,7 +1044,8 @@ namespace ToSTextClient
 
     class HelpView : AbstractView
     {
-        public (Command cmd, string[] names)? Topic
+<<<<<<< HEAD
+        public (IDocumented cmd, string[] names)? Topic
         {
             get => _Topic;
             set { _Topic = value; showHelp(); }
@@ -1041,20 +1054,26 @@ namespace ToSTextClient
         protected readonly Dictionary<string, Command> commands;
         protected Func<CommandContext> getContext;
         protected Action showHelp;
-        protected (Command cmd, string[] names)? _Topic;
+        protected (IDocumented cmd, string[] names)? _Topic;
+=======
+        protected readonly Dictionary<string, Command> commands;
+        protected Func<CommandContext> getContext;
+>>>>>>> parent of 637b7c6... Add help pages for individual commands
 
-        public HelpView(Dictionary<string, Command> commands, Func<CommandContext> getContext, Action showHelp, int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight)
+        public HelpView(Dictionary<string, Command> commands, Func<CommandContext> getContext, int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight)
         {
             this.commands = commands;
             this.getContext = getContext;
-            this.showHelp = showHelp;
         }
 
         public override int GetFullHeight()
         {
             CommandContext context = getContext();
-            int usableCommands = (_Topic == null ? commands : _Topic.Value.cmd.Subcommands).Values.Where(c => (c.UsableContexts & context) > 0).Distinct().Count() * 2;
-            return _Topic == null ? usableCommands + 1 : _Topic.Value.cmd.Parsers.Length * 2 + 2 + (usableCommands > 0 ? usableCommands + 1 : 0);
+<<<<<<< HEAD
+            return _Topic == null ? commands.Values.Where(c => (c.UsableContexts & context) > 0).Distinct().Count() * 2 + 1 : _Topic.Value.cmd.Documentation.Count() + 2;
+=======
+            return commands.Values.Where(c => (c.UsableContexts & context) > 0).Distinct().Count() * 2 + 1;
+>>>>>>> parent of 637b7c6... Add help pages for individual commands
         }
 
         protected override int DrawUnsafe(int width, int startLine = 0)
@@ -1063,78 +1082,31 @@ namespace ToSTextClient
             int cursorOffset = Console.CursorLeft;
             if (startLine == 0)
             {
-                Console.Write((_Topic == null ? " # Help" : string.Format(" # Help ({0})", string.Join(", ", _Topic?.names))).PadRightHard(width));
+                Console.Write(" # Help".PadRightHard(width));
                 Console.CursorTop++;
                 Console.CursorLeft = cursorOffset;
             }
             else startLine--;
             int lineIndex = 0;
-            if (_Topic == null)
-            {
-                foreach (KeyValuePair<string, Command> command in commands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => (c.Value.UsableContexts & context) > 0))
-                {
-                    if (++lineIndex > startLine)
-                    {
-                        Console.Write(string.Format("  /{0} {1}", command.Key, command.Value.UsageLine).PadRightHard(width));
-                        Console.CursorTop++;
-                        Console.CursorLeft = cursorOffset;
-                    }
-                    if (++lineIndex > startLine)
-                    {
-                        Console.Write(command.Value.Description.PadRightHard(width));
-                        Console.CursorTop++;
-                        Console.CursorLeft = cursorOffset;
-                    }
-                }
-            }
-            else
+            foreach (KeyValuePair<string, Command> command in commands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => (c.Value.UsableContexts & context) > 0))
             {
                 if (++lineIndex > startLine)
                 {
-                    Console.Write(_Topic.Value.cmd.Description.PadRightHard(width));
+                    Console.Write(string.Format("  /{0} {1}", command.Key, command.Value.UsageLine).PadRightHard(width));
                     Console.CursorTop++;
                     Console.CursorLeft = cursorOffset;
                 }
-                foreach (ArgumentParser argument in _Topic.Value.cmd.Parsers)
+<<<<<<< HEAD
+                foreach (string line in _Topic.Value.cmd.Documentation) if (++lineIndex > startLine)
                 {
-                    if (++lineIndex > startLine)
-                    {
-                        Console.Write(string.Format("  {0}", argument.DisplayName).PadRightHard(width));
-                        Console.CursorTop++;
-                        Console.CursorLeft = cursorOffset;
-                    }
-                    if (++lineIndex > startLine)
-                    {
-                        Console.Write(argument.Description.PadRightHard(width));
-                        Console.CursorTop++;
-                        Console.CursorLeft = cursorOffset;
-                    }
-                }
-                bool start = true;
-                foreach (KeyValuePair<string, Command> command in _Topic.Value.cmd.Subcommands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => (c.Value.UsableContexts & context) > 0))
+                    Console.Write(line.PadRightHard(width));
+=======
+                if (++lineIndex > startLine)
                 {
-                    if (start)
-                    {
-                        if (++lineIndex > startLine)
-                        {
-                            Console.Write(string.Format(" ~ {0}", _Topic.Value.cmd.SubcommandHeader).PadRightHard(width));
-                            Console.CursorTop++;
-                            Console.CursorLeft = cursorOffset;
-                        }
-                        start = false;
-                    }
-                    if (++lineIndex > startLine)
-                    {
-                        Console.Write(string.Format("  {0} {1}", command.Key, command.Value.UsageLine).PadRightHard(width));
-                        Console.CursorTop++;
-                        Console.CursorLeft = cursorOffset;
-                    }
-                    if (++lineIndex > startLine)
-                    {
-                        Console.Write(command.Value.Description.PadRightHard(width));
-                        Console.CursorTop++;
-                        Console.CursorLeft = cursorOffset;
-                    }
+                    Console.Write(command.Value.Description.PadRightHard(width));
+>>>>>>> parent of 637b7c6... Add help pages for individual commands
+                    Console.CursorTop++;
+                    Console.CursorLeft = cursorOffset;
                 }
             }
             startLine = lineIndex;

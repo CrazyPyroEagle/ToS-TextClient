@@ -7,10 +7,10 @@ namespace ToSTextClient
     {
         GameState GameState { get; }
         ITextView HomeView { get; }
-        IListView<GameModeID> GameModeView { get; }
+        IListView<GameMode> GameModeView { get; }
         ITextView GameView { get; }
         IListView<PlayerState> PlayerListView { get; }
-        IListView<RoleID> RoleListView { get; }
+        IListView<Role> RoleListView { get; }
         IListView<PlayerState> GraveyardView { get; }
         IListView<PlayerState> TeamView { get; }
         IWillView LastWillView { get; }

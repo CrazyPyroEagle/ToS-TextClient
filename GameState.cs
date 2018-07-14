@@ -9,17 +9,17 @@ namespace ToSTextClient
     class GameState
     {
         public ITextUI UI => game.UI;
-        public GameModeID GameMode { get; protected set; }
+        public GameMode GameMode { get; protected set; }
         public bool Started { get; protected set; }
-        public RoleID Role
+        public Role Role
         {
             get => _Role;
             set { game.UI.CommandContext &= ~CommandContext.PICK_NAMES; game.UI.GameView.AppendLine("Your role is {0}", (_Role = value).ToString().ToDisplayName()); }
         }
-        public PlayerID Self { get; set; }
-        public PlayerID Target { get => _Target; set => game.UI.GameView.AppendLine("Your target is {0}", ToName(_Target = value)); }
+        public Player Self { get; set; }
+        public Player Target { get => _Target; set => game.UI.GameView.AppendLine("Your target is {0}", ToName(_Target = value)); }
         public PlayerState[] Players { get; protected set; } = new PlayerState[15];
-        public RoleID[] Roles { get; protected set; } = new RoleID[0];
+        public Role[] Roles { get; protected set; } = new Role[0];
         public List<PlayerState> Team { get; set; } = new List<PlayerState>();
         public List<PlayerState> Graveyard { get; set; } = new List<PlayerState>();
         public int Day
@@ -46,7 +46,7 @@ namespace ToSTextClient
             get => _Host;
             set { if (_Host != value) { game.UI.SetCommandContext(CommandContext.HOST, _Host = value); game.UI.GameView.AppendLine(((_Host = value) ? "You are now host" : "You are no longer host", ConsoleColor.Green, ConsoleColor.Black)); } }
         }
-        public PlayerID? HostID
+        public Player? HostID
         {
             get => _HostID;
             set { _HostID = value; game.UI.RedrawView(game.UI.PlayerListView); }
@@ -78,12 +78,12 @@ namespace ToSTextClient
         }
 
         protected TextClient game;
-        protected RoleID _Role;
-        protected PlayerID _Target;
+        protected Role _Role;
+        protected Player _Target;
         protected int _Day;
         protected int _Night;
         protected bool _Host;
-        protected PlayerID? _HostID;
+        protected Player? _HostID;
         protected string _LastWill = "";
         protected string _DeathNote = "";
         protected string _ForgedWill = "";
@@ -91,7 +91,7 @@ namespace ToSTextClient
         protected string _TimerText;
         protected volatile int timerIndex;
 
-        public GameState(TextClient game, GameModeID gameMode)
+        public GameState(TextClient game, GameMode gameMode)
         {
             this.game = game;
             GameMode = gameMode;
@@ -102,7 +102,7 @@ namespace ToSTextClient
         {
             Started = true;
             Players = new PlayerState[playerCount];
-            Roles = new RoleID[playerCount];
+            Roles = new Role[playerCount];
             PopulatePlayers();
             HostID = null;
             game.UI.CommandContext = CommandContext.GAME | CommandContext.PICK_NAMES;
@@ -110,7 +110,7 @@ namespace ToSTextClient
             game.UI.GameView.AppendLine(("Please choose a name (or wait to get a random name)", ConsoleColor.Green, ConsoleColor.Black));
         }
 
-        public void AddPlayer(PlayerID player, bool host, bool display, string username, LobbyIconID lobbyIcon)
+        public void AddPlayer(Player player, bool host, bool display, string username, LobbyIcon lobbyIcon)
         {
             if (display) game.UI.GameView.AppendLine(("{0} has joined the game", ConsoleColor.Green, ConsoleColor.Black), username);
             if (host) HostID = player;
@@ -119,7 +119,7 @@ namespace ToSTextClient
             playerState.SelectedLobbyIcon = lobbyIcon;
         }
 
-        public void RemovePlayer(PlayerID player, bool update, bool display)
+        public void RemovePlayer(Player player, bool update, bool display)
         {
             if (display) game.UI.GameView.AppendLine(("{0} has left the game", ConsoleColor.Green, ConsoleColor.Black), ToName(player));
             if (update)
@@ -129,15 +129,15 @@ namespace ToSTextClient
                     Players[index].Self--;
                     Players[index - 1] = Players[index];
                 }
-                Players[14] = new PlayerState(this, PlayerID.PLAYER_15);
+                Players[14] = new PlayerState(this, Player.PLAYER_15);
                 game.UI.RedrawView(game.UI.PlayerListView);
             }
             else Players[(int)player].Left = true;
         }
 
-        public void AddRole(RoleID role)
+        public void AddRole(Role role)
         {
-            RoleID[] newRoles = new RoleID[Roles.Length + 1];
+            Role[] newRoles = new Role[Roles.Length + 1];
             Roles.CopyTo(newRoles, 0);
             newRoles[Roles.Length] = role;
             Roles = newRoles;
@@ -146,7 +146,7 @@ namespace ToSTextClient
 
         public void RemoveRole(byte index)
         {
-            RoleID[] newRoles = new RoleID[Roles.Length - 1];
+            Role[] newRoles = new Role[Roles.Length - 1];
             for (int cpi = 0; cpi < Roles.Length; cpi++)
             {
                 if (cpi == index) continue;
@@ -156,19 +156,19 @@ namespace ToSTextClient
             game.UI.RedrawView(game.UI.RoleListView);
         }
 
-        public string ToName(PlayerID playerID, bool inList = false)
+        public string ToName(Player playerID, bool inList = false)
         {
             int rawID = (int)playerID;
             if (rawID < Players.Length) return string.Format(playerID == HostID ? inList ? "{0,2} {1} (Host)" : "(Host) {1}" : inList ? Players[rawID]?.Left ?? false ? "{0,2} [{1}]" : "{0,2} {1}" : "({0}) {1}", rawID + 1, Players[rawID]?.Name ?? string.Format("#{0}", rawID + 1));
             switch (playerID)
             {
-                case PlayerID.JAILOR:
+                case Player.JAILOR:
                     return "Jailor";
-                case PlayerID.MEDIUM:
+                case Player.MEDIUM:
                     return "Medium";
-                case PlayerID.MAFIA:
+                case Player.MAFIA:
                     return "Mafia";
-                case PlayerID.VAMPIRE:
+                case Player.VAMPIRE:
                     return "Vampire";
             }
             return string.Format("#{0}", rawID + 1);
@@ -180,12 +180,12 @@ namespace ToSTextClient
             return string.Format("{0} ({1})", ToName(playerState.Self, inList), playerState.Role?.ToString()?.ToDisplayName());
         }
 
-        public bool TryParsePlayer(string[] args, ref int index, out PlayerID player, bool allowNone = true)
+        public bool TryParsePlayer(string[] args, ref int index, out Player player, bool allowNone = true)
         {
             if (byte.TryParse(args[index], out byte rawID))
             {
                 index++;
-                player = (PlayerID)(rawID - 1);
+                player = (Player)(rawID - 1);
                 return true;
             }
             for (int length = args.Length - index; length > 0; length++)
@@ -194,7 +194,7 @@ namespace ToSTextClient
                 if (allowNone && value == "none")
                 {
                     index += length;
-                    player = PlayerID.JAILOR;
+                    player = Player.JAILOR;
                     return true;
                 }
                 foreach (PlayerState ps in Players.Where(ps => ps.Name.ToLower() == value))
@@ -204,20 +204,20 @@ namespace ToSTextClient
                     return true;
                 }
             }
-            player = PlayerID.JAILOR;
+            player = Player.JAILOR;
             return false;
         }
 
-        public bool TryParsePlayer(string value, out PlayerID player)
+        public bool TryParsePlayer(string value, out Player player)
         {
             if (byte.TryParse(value, out byte rawID))
             {
-                player = (PlayerID)(rawID - 1);
+                player = (Player)(rawID - 1);
                 return true;
             }
             if (value == "none")
             {
-                player = PlayerID.JAILOR;
+                player = Player.JAILOR;
                 return true;
             }
             foreach (PlayerState ps in Players.Where(ps => ps.Name.ToLower() == value))
@@ -225,13 +225,13 @@ namespace ToSTextClient
                 player = ps.Self;
                 return true;
             }
-            player = PlayerID.JAILOR;
+            player = Player.JAILOR;
             return false;
         }
 
         private void PopulatePlayers()
         {
-            for (int index = 0; index < Players.Length; index++) Players[index] = new PlayerState(this, (PlayerID)index);
+            for (int index = 0; index < Players.Length; index++) Players[index] = new PlayerState(this, (Player)index);
         }
 
         private async Task UpdateTimer()
@@ -242,22 +242,22 @@ namespace ToSTextClient
 
     class PlayerState
     {
-        public PlayerID Self { get; set; }
+        public Player Self { get; set; }
         public string Name
         {
             get { return _Name; }
             set { _Name = value; game.UI.RedrawView(game.UI.PlayerListView); }
         }
-        public RoleID? Role
+        public Role? Role
         {
             get { return _Role; }
             set { _Role = value; game.UI.RedrawView(game.UI.TeamView); }
         }
-        public CharacterID SelectedCharacter { get; set; }
-        public HouseID SelectedHouse { get; set; }
-        public PetID SelectedPet { get; set; }
-        public LobbyIconID SelectedLobbyIcon { get; set; }
-        public DeathAnimationID SelectedDeathAnimation { get; set; }
+        public Character SelectedCharacter { get; set; }
+        public House SelectedHouse { get; set; }
+        public Pet SelectedPet { get; set; }
+        public LobbyIcon SelectedLobbyIcon { get; set; }
+        public DeathAnimation SelectedDeathAnimation { get; set; }
         public bool Dead
         {
             get { return _Dead; }
@@ -291,13 +291,13 @@ namespace ToSTextClient
 
         private GameState game;
         private string _Name;
-        private RoleID? _Role;
+        private Role? _Role;
         private bool _Dead;
         private bool _Left;
         private string _LastWill;
         private string _DeathNote;
 
-        public PlayerState(GameState parent, PlayerID self)
+        public PlayerState(GameState parent, Player self)
         {
             game = parent;
             Self = self;
