@@ -57,6 +57,7 @@ namespace ToSTextClient
         protected EditableWillView myDeathNoteView;
         protected EditableWillView myForgedWillView;
         protected HelpView helpView;
+        protected CommandGroup helpCommand;
 
         public ConsoleUI(TextClient game)
         {
@@ -89,14 +90,9 @@ namespace ToSTextClient
             hiddenSideViews = new Dictionary<AbstractView, List<AbstractView>>();
             hiddenSideViews.Add(mainView, sideViews);
             hiddenSideViews.Add((AbstractView)GameView, gameSideViews);
-
-<<<<<<< HEAD
+            
             RegisterCommand(helpCommand = new CommandGroup("View a list of available commands", this, "Topic", "Topics", cmd => helpView.Topic = null, ~CommandContext.NONE), "help", "?");
             RegisterCommand(new CommandGroup("Open the {0} view", this, "View", "Views")
-=======
-            RegisterCommand(new Command("View a list of available commands", ~CommandContext.NONE, cmd => OpenSideView(helpView)), "help", "?");
-            RegisterCommand(new CommandGroup("Open the {0} view", ~CommandContext.NONE, this, "View")
->>>>>>> parent of 637b7c6... Add help pages for individual commands
                 .Register(new Command("Open the help view", ~CommandContext.NONE, cmd => OpenSideView(helpView)), "help")
                 .Register(new Command("Open the game modes view", CommandContext.HOME, cmd => OpenSideView(GameModeView)), "modes")
                 .Register(new Command("Open the role list view", CommandContext.LOBBY | CommandContext.GAME, cmd => OpenSideView(RoleListView)), "roles", "rolelist")
@@ -104,11 +100,7 @@ namespace ToSTextClient
                 .Register(new Command("Open the graveyard view", CommandContext.GAME, cmd => OpenSideView(GraveyardView)), "graveyard")
                 .Register(new Command("Open the team view", CommandContext.GAME, cmd => OpenSideView(TeamView)), "team")
                 .Register(new Command("Open the LW/DN view", CommandContext.GAME, cmd => OpenSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "open");
-<<<<<<< HEAD
             RegisterCommand(new CommandGroup("Close the {0} view", this, "View", "Views")
-=======
-            RegisterCommand(new CommandGroup("Close the {0} view", ~CommandContext.NONE, this, "View")
->>>>>>> parent of 637b7c6... Add help pages for individual commands
                 .Register(new Command("Close the help view", ~CommandContext.NONE, cmd => CloseSideView(helpView)), "help")
                 .Register(new Command("Close the game modes view", CommandContext.HOME, cmd => CloseSideView(GameModeView)), "modes")
                 .Register(new Command("Close the role list view", CommandContext.LOBBY | CommandContext.GAME, cmd => CloseSideView(RoleListView)), "roles", "rolelist")
@@ -213,13 +205,9 @@ namespace ToSTextClient
 
         public void RegisterCommand(Command command, params string[] names)
         {
-<<<<<<< HEAD
             foreach (string name in names) commands[name] = command;
             helpCommand.Register(new Command(command.Description, command.UsableContexts, cmd => helpView.Topic = (command, names)), names);
             foreach (ArgumentParser parser in command.Parsers) helpCommand.Register(new Command(parser.Description, ~CommandContext.NONE, cmd => helpView.Topic = (parser, parser.HelpNames)), parser.HelpNames);
-=======
-            foreach (string name in names) commands.Add(name, command);
->>>>>>> parent of 637b7c6... Add help pages for individual commands
             RedrawView(helpView);
         }
 
@@ -1044,7 +1032,6 @@ namespace ToSTextClient
 
     class HelpView : AbstractView
     {
-<<<<<<< HEAD
         public (IDocumented cmd, string[] names)? Topic
         {
             get => _Topic;
@@ -1055,10 +1042,6 @@ namespace ToSTextClient
         protected Func<CommandContext> getContext;
         protected Action showHelp;
         protected (IDocumented cmd, string[] names)? _Topic;
-=======
-        protected readonly Dictionary<string, Command> commands;
-        protected Func<CommandContext> getContext;
->>>>>>> parent of 637b7c6... Add help pages for individual commands
 
         public HelpView(Dictionary<string, Command> commands, Func<CommandContext> getContext, int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight)
         {
@@ -1069,11 +1052,7 @@ namespace ToSTextClient
         public override int GetFullHeight()
         {
             CommandContext context = getContext();
-<<<<<<< HEAD
             return _Topic == null ? commands.Values.Where(c => (c.UsableContexts & context) > 0).Distinct().Count() * 2 + 1 : _Topic.Value.cmd.Documentation.Count() + 2;
-=======
-            return commands.Values.Where(c => (c.UsableContexts & context) > 0).Distinct().Count() * 2 + 1;
->>>>>>> parent of 637b7c6... Add help pages for individual commands
         }
 
         protected override int DrawUnsafe(int width, int startLine = 0)
@@ -1096,15 +1075,9 @@ namespace ToSTextClient
                     Console.CursorTop++;
                     Console.CursorLeft = cursorOffset;
                 }
-<<<<<<< HEAD
                 foreach (string line in _Topic.Value.cmd.Documentation) if (++lineIndex > startLine)
                 {
                     Console.Write(line.PadRightHard(width));
-=======
-                if (++lineIndex > startLine)
-                {
-                    Console.Write(command.Value.Description.PadRightHard(width));
->>>>>>> parent of 637b7c6... Add help pages for individual commands
                     Console.CursorTop++;
                     Console.CursorLeft = cursorOffset;
                 }
