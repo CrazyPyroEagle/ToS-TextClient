@@ -78,6 +78,9 @@ namespace ToSTextClient
         public static implicit operator FormattedString(string value) => new FormattedString(value);
         public static implicit operator FormattedString((string value, ConsoleColor bg) value) => new FormattedString(value.value, value.bg);
         public static implicit operator FormattedString((string value, ConsoleColor fg, ConsoleColor bg) value) => new FormattedString(value.value, value.fg, value.bg);
+
+        public static FormattedString operator +(FormattedString a, string b) => new FormattedString(a.Value + b, a.Foreground, a.Background);
+        public static FormattedString operator +(string a, FormattedString b) => new FormattedString(a + b.Value, b.Foreground, b.Background);
     }
 
     [Flags]
