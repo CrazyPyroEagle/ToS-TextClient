@@ -78,7 +78,7 @@ namespace ToSTextClient
             myLastWillView = new EditableWillView(" # My Last Will", lw => game.GameState.LastWill = lw);
             myDeathNoteView = new EditableWillView(" # My Death Note", dn => game.GameState.DeathNote = dn);
             myForgedWillView = new EditableWillView(" # My Forged Will", fw => game.GameState.ForgedWill = fw);
-            helpView = new HelpView(commands, () => _CommandContext, 40, 1);
+            helpView = new HelpView(commands, () => _CommandContext, () => OpenSideView(helpView), 40, 1);
 
             mainView = (AbstractView)HomeView;
             sideViews = new List<AbstractView>();
@@ -1043,10 +1043,11 @@ namespace ToSTextClient
         protected Action showHelp;
         protected (IDocumented cmd, string[] names)? _Topic;
 
-        public HelpView(Dictionary<string, Command> commands, Func<CommandContext> getContext, int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight)
+        public HelpView(Dictionary<string, Command> commands, Func<CommandContext> getContext, Action showHelp, int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight)
         {
             this.commands = commands;
             this.getContext = getContext;
+            this.showHelp = showHelp;
         }
 
         public override int GetFullHeight()
@@ -1061,25 +1062,46 @@ namespace ToSTextClient
             int cursorOffset = Console.CursorLeft;
             if (startLine == 0)
             {
-                Console.Write(" # Help".PadRightHard(width));
+                Console.Write((_Topic == null ? " # Help" : string.Format(" # Help ({0})", string.Join(", ", _Topic.Value.names))).PadRightHard(width));
                 Console.CursorTop++;
                 Console.CursorLeft = cursorOffset;
             }
             else startLine--;
             int lineIndex = 0;
-            foreach (KeyValuePair<string, Command> command in commands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => (c.Value.UsableContexts & context) > 0))
+            if (_Topic == null)
+            {
+                foreach (KeyValuePair<string, Command> command in commands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => (c.Value.UsableContexts & context) > 0))
+                {
+                    if (++lineIndex > startLine)
+                    {
+                        Console.Write(string.Format("  /{0} {1}", command.Key, command.Value.UsageLine).PadRightHard(width));
+                        Console.CursorTop++;
+                        Console.CursorLeft = cursorOffset;
+                    }
+                    if (++lineIndex > startLine)
+                    {
+                        Console.Write(command.Value.Description.PadRightHard(width));
+                        Console.CursorTop++;
+                        Console.CursorLeft = cursorOffset;
+                    }
+                }
+            }
+            else
             {
                 if (++lineIndex > startLine)
                 {
-                    Console.Write(string.Format("  /{0} {1}", command.Key, command.Value.UsageLine).PadRightHard(width));
+                    Console.Write(_Topic.Value.cmd.Description.PadRightHard(width));
                     Console.CursorTop++;
                     Console.CursorLeft = cursorOffset;
                 }
-                foreach (string line in _Topic.Value.cmd.Documentation) if (++lineIndex > startLine)
+                foreach (string line in _Topic.Value.cmd.Documentation)
                 {
-                    Console.Write(line.PadRightHard(width));
-                    Console.CursorTop++;
-                    Console.CursorLeft = cursorOffset;
+                    if (++lineIndex > startLine)
+                    {
+                        Console.Write(line.PadRightHard(width));
+                        Console.CursorTop++;
+                        Console.CursorLeft = cursorOffset;
+                    }
                 }
             }
             startLine = lineIndex;

@@ -38,8 +38,9 @@ namespace ToSTextClient
 
     class Command<T1> : Command
     {
-        public override string UsageLine { get => parser1.DisplayName; }
-        public override string Description { get => string.Format(description, parser1.DisplayName); }
+        public override string UsageLine => parser1.DisplayName;
+        public override string Description => string.Format(description, parser1.DisplayName);
+        public override ArgumentParser[] Parsers => new ArgumentParser[] { parser1 };
 
         protected ArgumentParser<T1> parser1;
         protected new Action<string, T1> runner;
@@ -56,8 +57,9 @@ namespace ToSTextClient
 
     class Command<T1, T2> : Command<T1>
     {
-        public override string UsageLine { get => string.Format("{0} {1}", parser1.DisplayName, parser2.DisplayName); }
-        public override string Description { get => string.Format(description, parser1.DisplayName, parser2.DisplayName); }
+        public override string UsageLine => string.Format("{0} {1}", parser1.DisplayName, parser2.DisplayName);
+        public override string Description => string.Format(description, parser1.DisplayName, parser2.DisplayName);
+        public override ArgumentParser[] Parsers => new ArgumentParser[] { parser1, parser2 };
 
         protected ArgumentParser<T2> parser2;
         protected new Action<string, T1, T2> runner;
@@ -76,7 +78,7 @@ namespace ToSTextClient
     {
         public override string UsageLine => string.Format("{0} {1} {2}", parser1.DisplayName, parser2.DisplayName, parser3.DisplayName);
         public override string Description => string.Format(description, parser1.DisplayName, parser2.DisplayName, parser3.DisplayName);
-        public override ArgumentParser[] Parsers { get => new ArgumentParser[] { parser1, parser2, parser3 }; }
+        public override ArgumentParser[] Parsers => new ArgumentParser[] { parser1, parser2, parser3 };
 
         protected ArgumentParser<T3> parser3;
         protected new Action<string, T1, T2, T3> runner;
@@ -205,11 +207,8 @@ namespace ToSTextClient
             return true;
         }, Enumerable.Empty<string>);
         
-        public static ArgumentParser<GameMode> GameMode(ITextUI ui) => new ArgumentParser<GameMode>("[Game Mode]", "The name or ID of a game mode", TryParseEnum, GetEnumValueDocs<GameMode>, () => ui.StatusLine = "Invalid game mode");
-        public static ArgumentParser<Role> Role(ITextUI ui) => new ArgumentParser<Role>("[Role]", "The name or ID of a role", TryParseEnum, GetEnumValueDocs<Role>, () => ui.StatusLine = "Invalid role");
         public static ArgumentParser<Player> Player(ITextUI ui) => new ArgumentParser<Player>("[Player]", "The name or number of a player", (string value, out Player player) => ui.GameState.TryParsePlayer(value, out player), () => ui.GameState.Players.Select(ps => ui.GameState.ToName(ps, true)), () => ui.StatusLine = "Invalid player");
-        public static ArgumentParser<ExecuteReason> ExecuteReason(ITextUI ui) => new ArgumentParser<ExecuteReason>("[Reason]", "The name or ID of an execute reason", TryParseEnum, GetEnumValueDocs<ExecuteReason>, () => ui.StatusLine = "Invalid execute reason");
-        public static ArgumentParser<ReportReason> ReportReason(ITextUI ui) => new ArgumentParser<ReportReason>("[Reason]", "The name or ID of a report reason", TryParseEnum, GetEnumValueDocs<ReportReason>, () => ui.StatusLine = "Invalid report reason");
+        public static ArgumentParser<TEnum> ForEnum<TEnum>(ITextUI ui, string name = null) where TEnum : struct => new ArgumentParser<TEnum>(name ?? string.Format("[{0}]", typeof(TEnum).Name.AddSpacing().ToDisplayName()), string.Format("The name or ID of a {0}", typeof(TEnum).Name.AddSpacing().ToLower()), TryParseEnum, GetEnumValueDocs<TEnum>, () => ui.StatusLine = string.Format("Invalid {0}", typeof(TEnum).Name.AddSpacing().ToLower()));
         public static ArgumentParser<byte> Position(ITextUI ui) => new ArgumentParser<byte>("[Position]", "A position number", ModifyResult<byte, byte>(byte.TryParse, b => (byte)(b - 1u)), Enumerable.Empty<string>, () => ui.StatusLine = "Invalid position");
 
         public static ArgumentParser<Option<T>> Optional<T>(ArgumentParser<T> parser) => new ArgumentParser<Option<T>>(OptionalDisplay(parser.DisplayName), string.Format("{0} (optional)", parser.Description), (string value, out Option<T> result) =>
