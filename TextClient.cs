@@ -336,8 +336,6 @@ namespace ToSTextClient
                 // Add missing cases here
                 case ServerMessageType.PICK_NAMES:
                     ServerMessageParsers.PICK_NAMES.Build(buffer, index, length).Parse(out byte playerCount);
-                    GameState.Timer = 25;
-                    GameState.TimerText = "Pick Names";
                     GameState.OnStart(playerCount);
                     break;
                 case ServerMessageType.NAMES_AND_POSITIONS_OF_USERS:
@@ -352,8 +350,6 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.START_NIGHT:
                     GameState.Night++;
-                    GameState.Timer = GameState.GameMode == GameMode.RAPID_MODE ? 15 : 30;
-                    GameState.TimerText = "Night";
                     break;
                 case ServerMessageType.START_DAY:
                     GameState.Day++;
@@ -374,16 +370,16 @@ namespace ToSTextClient
                     break;
                 // Add missing cases here
                 case ServerMessageType.START_DISCUSSION:
+                    UI.GameView.AppendLine("Discussion may now begin");
                     GameState.Timer = GameState.GameMode == GameMode.RAPID_MODE ? 15 : 45;
                     GameState.TimerText = "Discussion";
-                    UI.GameView.AppendLine("Discussion may now begin");
                     break;
                 case ServerMessageType.START_VOTING:
                     //ServerMessageParsers.START_VOTING.Build(buffer, index, length).Parse(out byte votesNeeded);     // TODO: How does this message parse?
                     UI.CommandContext |= CommandContext.VOTING;
+                    UI.GameView.AppendLine(("{0} votes are needed to lynch someone", ConsoleColor.Green, ConsoleColor.Black), (GameState.Players.Where(ps => !ps.Dead && !ps.Left).Count() + 1) / 2);
                     GameState.Timer = 30;
                     GameState.TimerText = "Voting";
-                    UI.GameView.AppendLine(("{0} votes are needed to lynch someone", ConsoleColor.Green, ConsoleColor.Black), (GameState.Players.Where(ps => !ps.Dead && !ps.Left).Count() + 1) / 2);
                     break;
                 case ServerMessageType.START_DEFENSE_TRANSITION:
                     ServerMessageParsers.START_DEFENSE_TRANSITION.Build(buffer, index, length).Parse(out playerID);
@@ -392,16 +388,16 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.START_JUDGEMENT:
                     UI.CommandContext |= CommandContext.JUDGEMENT;
+                    UI.GameView.AppendLine(("You may now vote guilty or innocent", ConsoleColor.Green, ConsoleColor.Black));
                     GameState.Timer = 20;
                     GameState.TimerText = "Judgement";
-                    UI.GameView.AppendLine(("You may now vote guilty or innocent", ConsoleColor.Green, ConsoleColor.Black));
                     break;
                 case ServerMessageType.TRIAL_FOUND_GUILTY:
                     ServerMessageParsers.TRIAL_FOUND_GUILTY.Build(buffer, index, length).Parse(out byte guiltyVotes).Parse(out byte innocentVotes);
                     UI.CommandContext &= ~CommandContext.JUDGEMENT;
+                    UI.GameView.AppendLine(("Judgement results: {0} guilty - {1} innocent", ConsoleColor.Green, ConsoleColor.Black), guiltyVotes, innocentVotes);
                     GameState.Timer = 5;
                     GameState.TimerText = "Last Words";
-                    UI.GameView.AppendLine(("Judgement results: {0} guilty - {1} innocent", ConsoleColor.Green, ConsoleColor.Black), guiltyVotes, innocentVotes);
                     break;
                 case ServerMessageType.TRIAL_FOUND_NOT_GUILTY:
                     ServerMessageParsers.TRIAL_FOUND_NOT_GUILTY.Build(buffer, index, length).Parse(out guiltyVotes).Parse(out innocentVotes);
@@ -468,8 +464,6 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.START_FIRST_DAY:
                     GameState.Day = 1;
-                    GameState.Timer = 15;
-                    GameState.TimerText = "Day";
                     break;
                 case ServerMessageType.BEING_JAILED:
                     UI.GameView.AppendLine(("You were hauled off to jail", ConsoleColor.Gray));

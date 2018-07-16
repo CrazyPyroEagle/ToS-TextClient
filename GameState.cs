@@ -29,6 +29,11 @@ namespace ToSTextClient
             {
                 game.UI.CommandContext = (game.UI.CommandContext & ~CommandContext.NIGHT) | CommandContext.DAY;
                 game.UI.GameView.AppendLine(("Day {0}", ConsoleColor.Black, ConsoleColor.White), _Day = value);
+                if (value == 1)
+                {
+                    Timer = 15;
+                    TimerText = "Discussion";
+                }
             }
         }
         public int Night
@@ -38,6 +43,8 @@ namespace ToSTextClient
             {
                 game.UI.CommandContext = (game.UI.CommandContext & ~CommandContext.DAY) | CommandContext.NIGHT;
                 game.UI.GameView.AppendLine(("Night {0}", ConsoleColor.Black, ConsoleColor.White), _Night = value);
+                Timer = GameMode == GameMode.RAPID_MODE ? 15 : 30;
+                TimerText = "Night";
             }
         }
         public int AbilitiesLeft { get; set; }
@@ -108,6 +115,8 @@ namespace ToSTextClient
             game.UI.CommandContext = CommandContext.GAME | CommandContext.PICK_NAMES;
             game.UI.RedrawSideViews();
             game.UI.GameView.AppendLine(("Please choose a name (or wait to get a random name)", ConsoleColor.Green, ConsoleColor.Black));
+            Timer = 25;
+            TimerText = "Pick Names";
         }
 
         public void AddPlayer(Player player, bool host, bool display, string username, LobbyIcon lobbyIcon)
@@ -276,6 +285,8 @@ namespace ToSTextClient
                 game.UI.LastWillView.Title = string.Format(" # (LW) {0}", game.ToName(Self));
                 game.UI.LastWillView.Value = _LastWill = value;
                 game.UI.OpenSideView(game.UI.LastWillView);
+                game.Timer = 6;
+                game.TimerText = "Last Will";
             }
         }
         public string DeathNote
