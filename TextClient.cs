@@ -365,6 +365,8 @@ namespace ToSTextClient
                     PlayerState playerState = GameState.Players[(int)playerID];
                     playerState.Role = roleID;
                     playerState.Dead = true;
+                    UI.GameView.AppendLine(("{0} died", ConsoleColor.DarkRed), GameState.ToName(playerID));
+                    GameState.Graveyard.Add(playerState);
                     if (causes.Count > 0) UI.GameView.AppendLine("Death causes: {0}", string.Join(", ", causes.Select(dc => dc.ToString().ToDisplayName())));
                     UI.GameView.AppendLine("Their role was {0}", roleID.ToString().ToDisplayName());
                     break;
@@ -777,7 +779,17 @@ namespace ToSTextClient
                 Debug.WriteLine("Error parsing message");
                 Debug.WriteLine(ex.ToString());
             }
-            QueueReceive();
+            try
+            {
+                QueueReceive();
+            }
+            catch (SocketException ex)
+            {
+                Debug.WriteLine("Connection Error: {0}", ex.Message);
+                Debug.WriteLine(ex.ToString());
+                UI.StatusLine = "Connection lost";
+                UI.CommandContext = CommandContext.AUTHENTICATING;
+            }
         }
 
         // Modified from https://stackoverflow.com/a/40869537

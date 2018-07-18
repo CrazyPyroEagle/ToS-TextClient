@@ -270,7 +270,7 @@ namespace ToSTextClient
         public bool Dead
         {
             get { return _Dead; }
-            set { if (_Dead = value) game.UI.GameView.AppendLine(("{0} died", ConsoleColor.DarkRed), game.ToName(Self)); game.Graveyard.Add(this); game.UI.RedrawView(game.UI.GraveyardView, game.UI.TeamView); }
+            set { _Dead = value; game.UI.RedrawView(game.UI.TeamView, game.UI.PlayerListView); }
         }
         public bool Left
         {
