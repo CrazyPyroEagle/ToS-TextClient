@@ -377,7 +377,7 @@ namespace ToSTextClient
                 case ServerMessageType.START_VOTING:
                     //ServerMessageParsers.START_VOTING.Build(buffer, index, length).Parse(out byte votesNeeded);     // TODO: How does this message parse?
                     UI.CommandContext |= CommandContext.VOTING;
-                    UI.GameView.AppendLine(("{0} votes are needed to lynch someone", ConsoleColor.Green, ConsoleColor.Black), (GameState.Players.Where(ps => !ps.Dead && !ps.Left).Count() + 1) / 2);
+                    UI.GameView.AppendLine(("{0} votes are needed to lynch someone", ConsoleColor.Green, ConsoleColor.Black), (GameState.Players.Where(ps => !ps.Dead && !ps.Left).Count() + 2) / 2);
                     GameState.Timer = 30;
                     GameState.TimerText = "Voting";
                     break;
@@ -597,6 +597,14 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.START_NIGHT_TRANSITION:
                     UI.CommandContext &= ~CommandContext.VOTING;
+                    break;
+                case ServerMessageType.START_DAY_TRANSITION:
+                    ServerMessageParsers.START_DAY_TRANSITION.Build(buffer, index, length).Parse(parser =>
+                    {
+                        RootParser root = parser.Parse(out Player deadPlayer);
+                        GameState.Players[(int)deadPlayer].Dead = true;
+                        return root;
+                    }, out _);
                     break;
                 // Add missing cases here
                 case ServerMessageType.DEATH_NOTE:

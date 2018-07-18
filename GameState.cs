@@ -121,11 +121,11 @@ namespace ToSTextClient
 
         public void AddPlayer(Player player, bool host, bool display, string username, LobbyIcon lobbyIcon)
         {
-            if (display) game.UI.GameView.AppendLine(("{0} has joined the game", ConsoleColor.Green, ConsoleColor.Black), username);
             if (host) HostID = player;
             PlayerState playerState = Players[(int)player];
             playerState.Name = username;
             playerState.SelectedLobbyIcon = lobbyIcon;
+            if (display) game.UI.GameView.AppendLine(("{0} has joined the game", ConsoleColor.Green, ConsoleColor.Black), ToName(player));
         }
 
         public void RemovePlayer(Player player, bool update, bool display)
