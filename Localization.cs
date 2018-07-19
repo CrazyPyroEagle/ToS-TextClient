@@ -12,10 +12,12 @@ namespace ToSTextClient
         protected const string LOCALIZATION_ROOT = "file://C:/Program Files (x86)/steam/steamapps/common/Town of Salem/XMLData/Localization/en-US";
         protected const string FALLBACK_ROOT = "http://blankmediagames.com/TownOfSalem/XMLData/Localization/en-US";
 
+        protected ITextUI ui;
         protected XDocument game;
 
-        public Localization()
+        public Localization(ITextUI ui)
         {
+            this.ui = ui;
             game = LoadResource("Game.xml");
         }
 
@@ -39,9 +41,24 @@ namespace ToSTextClient
             {
                 return XDocument.Load(Combine(LOCALIZATION_ROOT, path));
             }
-            catch (Exception ex) when (ex is FileNotFoundException || ex is SecurityException)
+            catch (Exception ex) when (ex is IOException || ex is SecurityException)
             {
-                return XDocument.Load(Combine(FALLBACK_ROOT, path));
+                try
+                {
+                    return XDocument.Load(path);
+                }
+                catch (Exception ex2) when (ex2 is IOException || ex2 is SecurityException)
+                {
+                    try
+                    {
+                        return XDocument.Load(Combine(FALLBACK_ROOT, path));
+                    }
+                    catch (Exception ex3) when (ex3 is IOException || ex3 is SecurityException)
+                    {
+                        ui.StatusLine = "Failed to load localization files: check your internet connection";
+                        return null;
+                    }
+                }
             }
         }
 

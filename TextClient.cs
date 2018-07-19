@@ -60,27 +60,43 @@ namespace ToSTextClient
 
         static void Main(string[] args)
         {
-            Console.OutputEncoding = Encoding.Unicode;
-            Console.Title = "Town of Salem (Unofficial Client)";
-            Console.WriteLine("Build {0}", BUILD_NUMBER);
-            Console.Write("Username: ");
-            string user = Console.ReadLine();
-            Console.Write("Password: ");
-            SecureString pwrd = ReadPassword();
-            Console.WriteLine("(hidden)", pwrd.Length);
-            RSA rsa = RSA.Create();
-            RSAParameters rsaParams = new RSAParameters();
-            rsaParams.Modulus = MODULUS;
-            rsaParams.Exponent = EXPONENT;
-            rsa.ImportParameters(rsaParams);
-            byte[] pwrdb = ToByteArray(pwrd);
-            byte[] encpw = rsa.Encrypt(pwrdb, RSAEncryptionPadding.Pkcs1);
-            Array.Clear(pwrdb, 0, pwrdb.Length);
+            try
+            {
+                Console.OutputEncoding = Encoding.Unicode;
+                Console.Title = "Town of Salem (Unofficial Client)";
+                Console.WriteLine("Build {0}", BUILD_NUMBER);
+                Console.Write("Username: ");
+                string user = Console.ReadLine();
+                Console.Write("Password: ");
+                SecureString pwrd = ReadPassword();
+                Console.WriteLine("(hidden)", pwrd.Length);
+                RSA rsa = RSA.Create();
+                RSAParameters rsaParams = new RSAParameters();
+                rsaParams.Modulus = MODULUS;
+                rsaParams.Exponent = EXPONENT;
+                rsa.ImportParameters(rsaParams);
+                byte[] pwrdb = ToByteArray(pwrd);
+                byte[] encpw = rsa.Encrypt(pwrdb, RSAEncryptionPadding.Pkcs1);
+                Array.Clear(pwrdb, 0, pwrdb.Length);
 
-            Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            Console.WriteLine("Connecting to server");
-            socket.Connect("live4.tos.blankmediagames.com", 3600);
-            ((ConsoleUI)new TextClient(socket, user, Convert.ToBase64String(encpw)).UI).Run();
+                Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                Console.WriteLine("Connecting to server");
+                socket.Connect("live4.tos.blankmediagames.com", 3600);
+                ((ConsoleUI)new TextClient(socket, user, Convert.ToBase64String(encpw)).UI).Run();
+                return;
+            }
+            catch (SocketException)
+            {
+                Console.Clear();
+                Console.WriteLine("Failed to connect to the server: check your internet connection");
+            }
+            catch (Exception e)
+            {
+                Console.Clear();
+                Console.WriteLine("Exception occurred during startup. Please report this issue, including the following text.");
+                Console.WriteLine(e.ToString());
+            }
+            while (true) ;
         }
 
         TextClient(Socket socket, string user, string encpw)
@@ -89,11 +105,11 @@ namespace ToSTextClient
             buffer = new byte[4096];
             Parser = new MessageParser(ParseMessage, (buffer, index, length) => socket.Send(buffer, index, length, SocketFlags.None));
             Parser.Authenticate(AuthenticationMode.BMG_FORUMS, true, BUILD_NUMBER, user, encpw);
-            Localization = new Localization();
             UI = new ConsoleUI(this)
             {
                 CommandContext = CommandContext.AUTHENTICATING
             };
+            Localization = new Localization(UI);
             UI.RegisterCommand(new Command<GameMode>("Join a lobby for {0}", CommandContext.HOME, ArgumentParsers.ForEnum<GameMode>(UI), (cmd, gameMode) =>
             {
                 if (ActiveGameModes.Contains(gameMode)) Parser.JoinLobby(gameMode);

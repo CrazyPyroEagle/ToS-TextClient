@@ -35,4 +35,7 @@
   <ItemGroup>
     <ProjectReference Include="..\ToS-Parser\ToS-Parser.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Properties\" />
+  </ItemGroup>
 </Project>
