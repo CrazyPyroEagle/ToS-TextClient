@@ -8,16 +8,16 @@ namespace ToSTextClient
 {
     class GameState
     {
-        public ITextUI UI => game.UI;
+        public TextClient Game { get; protected set; }
         public GameMode GameMode { get; protected set; }
         public bool Started { get; protected set; }
         public Role Role
         {
             get => _Role;
-            set { game.UI.CommandContext &= ~CommandContext.PICK_NAMES; game.UI.GameView.AppendLine("Your role is {0}", (_Role = value).ToString().ToDisplayName()); }
+            set { Game.UI.CommandContext &= ~CommandContext.PICK_NAMES; Game.UI.GameView.AppendLine("Your role is {0}", (_Role = value).ToString().ToDisplayName()); }
         }
         public Player Self { get; set; }
-        public Player Target { get => _Target; set => game.UI.GameView.AppendLine("Your target is {0}", ToName(_Target = value)); }
+        public Player Target { get => _Target; set => Game.UI.GameView.AppendLine("Your target is {0}", ToName(_Target = value)); }
         public PlayerState[] Players { get; protected set; } = new PlayerState[15];
         public Role[] Roles { get; protected set; } = new Role[0];
         public List<PlayerState> Team { get; set; } = new List<PlayerState>();
@@ -27,12 +27,12 @@ namespace ToSTextClient
             get => _Day;
             set
             {
-                game.UI.CommandContext = (game.UI.CommandContext & ~CommandContext.NIGHT) | CommandContext.DAY;
-                game.UI.GameView.AppendLine(("Day {0}", ConsoleColor.Black, ConsoleColor.White), _Day = value);
+                Game.UI.CommandContext = (Game.UI.CommandContext & ~CommandContext.NIGHT) | CommandContext.DAY;
+                Game.UI.GameView.AppendLine(("Day {0}", ConsoleColor.Black, ConsoleColor.White), _Day = value);
                 if (value == 1)
                 {
-                    Timer = 15;
-                    TimerText = "Discussion";
+                    Game.Timer = 15;
+                    Game.TimerText = "Discussion";
                 }
             }
         }
@@ -41,50 +41,39 @@ namespace ToSTextClient
             get => _Night;
             set
             {
-                game.UI.CommandContext = (game.UI.CommandContext & ~CommandContext.DAY) | CommandContext.NIGHT;
-                game.UI.GameView.AppendLine(("Night {0}", ConsoleColor.Black, ConsoleColor.White), _Night = value);
-                Timer = GameMode == GameMode.RAPID_MODE ? 15 : 30;
-                TimerText = "Night";
+                Game.UI.CommandContext = (Game.UI.CommandContext & ~CommandContext.DAY) | CommandContext.NIGHT;
+                Game.UI.GameView.AppendLine(("Night {0}", ConsoleColor.Black, ConsoleColor.White), _Night = value);
+                Game.Timer = GameMode == GameMode.RAPID_MODE ? 15 : 30;
+                Game.TimerText = "Night";
             }
         }
         public int AbilitiesLeft { get; set; }
         public bool Host
         {
             get => _Host;
-            set { if (_Host != value) { game.UI.SetCommandContext(CommandContext.HOST, _Host = value); game.UI.GameView.AppendLine(((_Host = value) ? "You are now host" : "You are no longer host", ConsoleColor.Green, ConsoleColor.Black)); } }
+            set { if (_Host != value) { Game.UI.SetCommandContext(CommandContext.HOST, _Host = value); Game.UI.GameView.AppendLine(((_Host = value) ? "You are now host" : "You are no longer host", ConsoleColor.Green, ConsoleColor.Black)); } }
         }
         public Player? HostID
         {
             get => _HostID;
-            set { _HostID = value; game.UI.RedrawView(game.UI.PlayerListView); }
+            set { _HostID = value; Game.UI.RedrawView(Game.UI.PlayerListView); }
         }
         public string LastWill
         {
             get => _LastWill;
-            set { game.Parser.SaveLastWill(_LastWill = value); }
+            set { Game.Parser.SaveLastWill(_LastWill = value); }
         }
         public string DeathNote
         {
             get => _DeathNote;
-            set { game.Parser.SaveDeathNote(_DeathNote = value); }
+            set { Game.Parser.SaveDeathNote(_DeathNote = value); }
         }
         public string ForgedWill
         {
             get => _ForgedWill;
-            set { game.Parser.SaveForgedWill(_ForgedWill = value); }
+            set { Game.Parser.SaveForgedWill(_ForgedWill = value); }
         }
-        public int Timer
-        {
-            get => _Timer;
-            set { if ((_Timer = value) >= 0) game.UI.RedrawTimer(); }
-        }
-        public string TimerText
-        {
-            get => _TimerText;
-            set { _TimerText = value; Task.Run(UpdateTimer); game.UI.RedrawTimer(); }
-        }
-
-        protected TextClient game;
+        
         protected Role _Role;
         protected Player _Target;
         protected int _Day;
@@ -94,13 +83,10 @@ namespace ToSTextClient
         protected string _LastWill = "";
         protected string _DeathNote = "";
         protected string _ForgedWill = "";
-        protected int _Timer;
-        protected string _TimerText;
-        protected volatile int timerIndex;
 
         public GameState(TextClient game, GameMode gameMode)
         {
-            this.game = game;
+            this.Game = game;
             GameMode = gameMode;
             PopulatePlayers();
         }
@@ -112,11 +98,11 @@ namespace ToSTextClient
             Roles = new Role[playerCount];
             PopulatePlayers();
             HostID = null;
-            game.UI.CommandContext = CommandContext.GAME | CommandContext.PICK_NAMES;
-            game.UI.RedrawSideViews();
-            game.UI.GameView.AppendLine(("Please choose a name (or wait to get a random name)", ConsoleColor.Green, ConsoleColor.Black));
-            Timer = 25;
-            TimerText = "Pick Names";
+            Game.UI.CommandContext = CommandContext.GAME | CommandContext.PICK_NAMES;
+            Game.UI.RedrawSideViews();
+            Game.UI.GameView.AppendLine(("Please choose a name (or wait to get a random name)", ConsoleColor.Green, ConsoleColor.Black));
+            Game.Timer = 25;
+            Game.TimerText = "Pick Names";
         }
 
         public void AddPlayer(Player player, bool host, bool display, string username, LobbyIcon lobbyIcon)
@@ -125,12 +111,12 @@ namespace ToSTextClient
             PlayerState playerState = Players[(int)player];
             playerState.Name = username;
             playerState.SelectedLobbyIcon = lobbyIcon;
-            if (display) game.UI.GameView.AppendLine(("{0} has joined the game", ConsoleColor.Green, ConsoleColor.Black), ToName(player));
+            if (display) Game.UI.GameView.AppendLine(("{0} has joined the game", ConsoleColor.Green, ConsoleColor.Black), ToName(player));
         }
 
         public void RemovePlayer(Player player, bool update, bool display)
         {
-            if (display) game.UI.GameView.AppendLine(("{0} has left the game", ConsoleColor.Green, ConsoleColor.Black), ToName(player));
+            if (display) Game.UI.GameView.AppendLine(("{0} has left the game", ConsoleColor.Green, ConsoleColor.Black), ToName(player));
             if (update)
             {
                 for (int index = (int)player + 1; index < Players.Length; index++)
@@ -139,7 +125,7 @@ namespace ToSTextClient
                     Players[index - 1] = Players[index];
                 }
                 Players[14] = new PlayerState(this, Player.PLAYER_15);
-                game.UI.RedrawView(game.UI.PlayerListView);
+                Game.UI.RedrawView(Game.UI.PlayerListView);
             }
             else Players[(int)player].Left = true;
         }
@@ -150,7 +136,7 @@ namespace ToSTextClient
             Roles.CopyTo(newRoles, 0);
             newRoles[Roles.Length] = role;
             Roles = newRoles;
-            game.UI.RedrawView(game.UI.RoleListView);
+            Game.UI.RedrawView(Game.UI.RoleListView);
         }
 
         public void RemoveRole(byte index)
@@ -162,7 +148,7 @@ namespace ToSTextClient
                 newRoles[cpi < index ? cpi : cpi - 1] = Roles[cpi];
             }
             Roles = newRoles;
-            game.UI.RedrawView(game.UI.RoleListView);
+            Game.UI.RedrawView(Game.UI.RoleListView);
         }
 
         public string ToName(Player playerID, bool inList = false)
@@ -242,11 +228,6 @@ namespace ToSTextClient
         {
             for (int index = 0; index < Players.Length; index++) Players[index] = new PlayerState(this, (Player)index);
         }
-
-        private async Task UpdateTimer()
-        {
-            for (int thisInc = ++timerIndex; timerIndex == thisInc && Timer > 0; Timer--) await Task.Delay(1000);
-        }
     }
 
     class PlayerState
@@ -255,12 +236,12 @@ namespace ToSTextClient
         public string Name
         {
             get { return _Name; }
-            set { _Name = value; game.UI.RedrawView(game.UI.PlayerListView); }
+            set { _Name = value; game.Game.UI.RedrawView(game.Game.UI.PlayerListView); }
         }
         public Role? Role
         {
             get { return _Role; }
-            set { _Role = value; game.UI.RedrawView(game.UI.TeamView); }
+            set { _Role = value; game.Game.UI.RedrawView(game.Game.UI.TeamView); }
         }
         public Character SelectedCharacter { get; set; }
         public House SelectedHouse { get; set; }
@@ -270,23 +251,23 @@ namespace ToSTextClient
         public bool Dead
         {
             get { return _Dead; }
-            set { _Dead = value; game.UI.RedrawView(game.UI.TeamView, game.UI.PlayerListView); }
+            set { _Dead = value; game.Game.UI.RedrawView(game.Game.UI.TeamView, game.Game.UI.PlayerListView); }
         }
         public bool Left
         {
             get { return _Left; }
-            set { _Left = value; game.UI.RedrawView(game.UI.PlayerListView, game.UI.TeamView, game.UI.GraveyardView); }
+            set { _Left = value; game.Game.UI.RedrawView(game.Game.UI.PlayerListView, game.Game.UI.TeamView, game.Game.UI.GraveyardView); }
         }
         public string LastWill
         {
             get { return _LastWill; }
             set
             {
-                game.UI.LastWillView.Title = string.Format(" # (LW) {0}", game.ToName(Self));
-                game.UI.LastWillView.Value = _LastWill = value;
-                game.UI.OpenSideView(game.UI.LastWillView);
-                game.Timer = 6;
-                game.TimerText = "Last Will";
+                game.Game.UI.LastWillView.Title = string.Format(" # (LW) {0}", game.ToName(Self));
+                game.Game.UI.LastWillView.Value = _LastWill = value;
+                game.Game.UI.OpenSideView(game.Game.UI.LastWillView);
+                game.Game.Timer = 6;
+                game.Game.TimerText = "Last Will";
             }
         }
         public string DeathNote
@@ -294,9 +275,9 @@ namespace ToSTextClient
             get { return _DeathNote; }
             set
             {
-                game.UI.LastWillView.Title = string.Format(" # (DN) {0}", game.ToName(Self));
-                game.UI.LastWillView.Value = _DeathNote = value;
-                game.UI.OpenSideView(game.UI.LastWillView);
+                game.Game.UI.LastWillView.Title = string.Format(" # (DN) {0}", game.ToName(Self));
+                game.Game.UI.LastWillView.Value = _DeathNote = value;
+                game.Game.UI.OpenSideView(game.Game.UI.LastWillView);
             }
         }
 

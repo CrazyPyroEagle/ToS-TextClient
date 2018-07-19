@@ -230,8 +230,8 @@ namespace ToSTextClient
                 mainView = view;
                 sideViews = hiddenSideViews.SafeIndex(view, () => new List<AbstractView>());
                 inputHistory.Clear();
-                game.GameState.Timer = 0;
-                game.GameState.TimerText = null;
+                game.Timer = 0;
+                game.TimerText = null;
                 RedrawAll();
             }
         }
@@ -259,15 +259,12 @@ namespace ToSTextClient
 
         public void RedrawTimer()
         {
-            if (game.GameState?.TimerText != null)
+            lock (drawLock)
             {
-                lock (drawLock)
-                {
-                    Console.CursorTop = fullHeight - 1;
-                    Console.CursorLeft = mainWidth + 1;
-                    Console.Write(string.Format("{0}: {1}", game.GameState.TimerText, game.GameState.Timer).PadRightHard(sideWidth));
-                    ResetCursor();
-                }
+                Console.CursorTop = fullHeight - 1;
+                Console.CursorLeft = mainWidth + 1;
+                Console.Write((game.TimerText != null ? string.Format("{0}: {1}", game.TimerText, game.Timer) : "").PadRightHard(sideWidth));
+                ResetCursor();
             }
         }
 
@@ -761,6 +758,8 @@ namespace ToSTextClient
                 ResetCursor();
             }
         }
+
+        public void AudioAlert() => Console.Beep();
     }
 
     abstract class AbstractView : IView

@@ -27,6 +27,7 @@ namespace ToSTextClient
         void RedrawSideViews();
         void RegisterCommand(Command command, params string[] names);
         void SetCommandContext(CommandContext context, bool value);
+        void AudioAlert();
     }
 
     interface IView { }

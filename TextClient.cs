@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Security;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.Tasks;
 using ToSParser;
 
 namespace ToSTextClient
@@ -53,10 +54,23 @@ namespace ToSTextClient
         public ITextUI UI { get; set; }
         public MessageParser Parser { get; protected set; }
         public Localization Localization { get; protected set; }
+        public int Timer
+        {
+            get => _Timer;
+            set { if ((_Timer = value) >= 0) UI.RedrawTimer(); }
+        }
+        public string TimerText
+        {
+            get => _TimerText;
+            set { _TimerText = value; Task.Run(UpdateTimer); UI.RedrawTimer(); }
+        }
 
         private Socket socket;
         private byte[] buffer;
         private GameState _GameState;
+        private int _Timer;
+        private string _TimerText;
+        private volatile int timerIndex;
 
         static void Main(string[] args)
         {
@@ -113,9 +127,15 @@ namespace ToSTextClient
             Localization = new Localization(UI);
             UI.RegisterCommand(new Command<GameMode>("Join a lobby for {0}", CommandContext.HOME, ArgumentParsers.ForEnum<GameMode>(UI), (cmd, gameMode) =>
             {
-                if (ActiveGameModes.Contains(gameMode)) Parser.JoinLobby(gameMode);
+                if (ActiveGameModes.Contains(gameMode))
+                {
+                    if (gameMode.HasRankedQueue()) Parser.JoinRankedQueue(gameMode);
+                    else Parser.JoinLobby(gameMode);
+                }
                 else UI.StatusLine = string.Format("Cannot join game mode: {0}", gameMode.ToString().ToDisplayName());
             }), "join");
+            UI.RegisterCommand(new Command("Leave the queue", CommandContext.HOME, cmd => ClientMessageParsers.LeaveRankedQueue(Parser)), "leavequeue");
+            UI.RegisterCommand(new Command("Accept the queue popup", CommandContext.HOME, cmd => Parser.AcceptRanked()), "accept");
             UI.RegisterCommand(new Command("Exit the game", CommandContext.AUTHENTICATING | CommandContext.HOME, cmd => UI.RunInput = false), "quit", "exit");
             UI.RegisterCommand(new Command<Language>("Set the lobby language", CommandContext.HOME, ArgumentParsers.ForEnum<Language>(UI), (cmd, lang) => Parser.UpdateSettings(Setting.SELECTED_QUEUE_LANGUAGE, (byte)lang)), "lang", "language");
             UI.RegisterCommand(new Command("Leave the game", CommandContext.LOBBY | CommandContext.GAME, cmd => Parser.LeaveGame()), "leave");
@@ -236,8 +256,8 @@ namespace ToSTextClient
                     GameState.RemoveRole(slotID);
                     break;
                 case ServerMessageType.HOST_CLICKED_ON_START_BUTTON:
-                    GameState.Timer = 10;
-                    GameState.TimerText = "Start";
+                    Timer = 10;
+                    TimerText = "Start";
                     UI.GameView.AppendLine(("The game will start in 10 seconds", ConsoleColor.DarkGreen));
                     break;
                 case ServerMessageType.CANCEL_START_COOLDOWN:
@@ -348,13 +368,18 @@ namespace ToSTextClient
                 case ServerMessageType.START_RANKED_QUEUE:
                     ServerMessageParsers.START_RANKED_QUEUE.Build(buffer, index, length).Parse(out bool requeue).Parse(out seconds);
                     if (requeue) UI.StatusLine = "Requeued due to a lack of players";
-                    UI.HomeView.ReplaceLine(3, "The ranked game will start in {0} seconds", seconds);
+                    Timer = (int)seconds;
+                    TimerText = "Queue";
                     break;
                 case ServerMessageType.LEAVE_RANKED_QUEUE:
-                    UI.HomeView.ReplaceLine(3, "You have left the ranked queue");
+                    Timer = 0;
+                    TimerText = null;
+                    UI.StatusLine = "You have left the ranked queue";
                     break;
                 case ServerMessageType.ACCEPT_RANKED_POPUP:
-                    UI.HomeView.ReplaceLine(3, ("Are you ready for the Ranked game? (10 seconds to reply)", ConsoleColor.Green, ConsoleColor.Black));
+                    UI.StatusLine = "Are you ready for the Ranked game?";
+                    Timer = 10;
+                    TimerText = "Queue Popup";
                     break;
                 // Add missing cases here
                 case ServerMessageType.RANKED_TIMEOUT_DURATION:
@@ -373,6 +398,7 @@ namespace ToSTextClient
                 // Add missing cases here
                 case ServerMessageType.PICK_NAMES:
                     ServerMessageParsers.PICK_NAMES.Build(buffer, index, length).Parse(out byte playerCount);
+                    if (GameState == null) GameState = new GameState(this, GameMode.RANKED);
                     GameState.OnStart(playerCount);
                     break;
                 case ServerMessageType.NAMES_AND_POSITIONS_OF_USERS:
@@ -411,15 +437,15 @@ namespace ToSTextClient
                 // Add missing cases here
                 case ServerMessageType.START_DISCUSSION:
                     UI.GameView.AppendLine("Discussion may now begin");
-                    GameState.Timer = GameState.GameMode == GameMode.RAPID_MODE ? 15 : 45;
-                    GameState.TimerText = "Discussion";
+                    Timer = GameState.GameMode == GameMode.RAPID_MODE ? 15 : 45;
+                    TimerText = "Discussion";
                     break;
                 case ServerMessageType.START_VOTING:
                     //ServerMessageParsers.START_VOTING.Build(buffer, index, length).Parse(out byte votesNeeded);     // TODO: How does this message parse?
                     UI.CommandContext |= CommandContext.VOTING;
                     UI.GameView.AppendLine(("{0} votes are needed to lynch someone", ConsoleColor.Green, ConsoleColor.Black), (GameState.Players.Where(ps => !ps.Dead && !ps.Left).Count() + 2) / 2);
-                    GameState.Timer = 30;
-                    GameState.TimerText = "Voting";
+                    Timer = 30;
+                    TimerText = "Voting";
                     break;
                 case ServerMessageType.START_DEFENSE_TRANSITION:
                     ServerMessageParsers.START_DEFENSE_TRANSITION.Build(buffer, index, length).Parse(out playerID);
@@ -429,15 +455,15 @@ namespace ToSTextClient
                 case ServerMessageType.START_JUDGEMENT:
                     UI.CommandContext |= CommandContext.JUDGEMENT;
                     UI.GameView.AppendLine(("You may now vote guilty or innocent", ConsoleColor.Green, ConsoleColor.Black));
-                    GameState.Timer = 20;
-                    GameState.TimerText = "Judgement";
+                    Timer = 20;
+                    TimerText = "Judgement";
                     break;
                 case ServerMessageType.TRIAL_FOUND_GUILTY:
                     ServerMessageParsers.TRIAL_FOUND_GUILTY.Build(buffer, index, length).Parse(out byte guiltyVotes).Parse(out byte innocentVotes);
                     UI.CommandContext &= ~CommandContext.JUDGEMENT;
                     UI.GameView.AppendLine(("Judgement results: {0} guilty - {1} innocent", ConsoleColor.Green, ConsoleColor.Black), guiltyVotes, innocentVotes);
-                    GameState.Timer = 5;
-                    GameState.TimerText = "Last Words";
+                    Timer = 5;
+                    TimerText = "Last Words";
                     break;
                 case ServerMessageType.TRIAL_FOUND_NOT_GUILTY:
                     ServerMessageParsers.TRIAL_FOUND_NOT_GUILTY.Build(buffer, index, length).Parse(out guiltyVotes).Parse(out innocentVotes);
@@ -657,8 +683,8 @@ namespace ToSTextClient
                     GameState.Players[(int)playerID].Dead = false;
                     break;
                 case ServerMessageType.START_DEFENSE:
-                    GameState.Timer = 20;
-                    GameState.TimerText = "Defense";
+                    Timer = 20;
+                    TimerText = "Defense";
                     UI.GameView.AppendLine(("What is your defense?", ConsoleColor.Green, ConsoleColor.Black));
                     break;
                 case ServerMessageType.USER_LEFT_DURING_SELECTION:
@@ -924,6 +950,11 @@ namespace ToSTextClient
             }
         }
 
+        private async Task UpdateTimer()
+        {
+            for (int thisInc = ++timerIndex; timerIndex == thisInc && Timer > 0; Timer--) await Task.Delay(1000);
+        }
+
         // Modified from https://stackoverflow.com/a/40869537
         private static SecureString ReadPassword()
         {
@@ -1015,6 +1046,18 @@ namespace ToSTextClient
                 case Role.COVEN_RANDOM_MAFIA:
                 case Role.COVEN_MAFIA_SUPPORT:
                 case Role.COVEN_MAFIA_DECEPTION:
+                    return true;
+            }
+        }
+
+        public static bool HasRankedQueue(this GameMode mode)
+        {
+            switch (mode)
+            {
+                default:
+                    return false;
+                case GameMode.RANKED:
+                case GameMode.COVEN_RANKED:
                     return true;
             }
         }
