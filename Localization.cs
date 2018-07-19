@@ -23,16 +23,27 @@ namespace ToSTextClient
 
         public FormattedString Of(LocalizationTable value)
         {
-            XElement element = game.Element("Entries").Elements("Entry").Where(entry => entry.Element("id").Value == ((byte)value).ToString()).FirstOrDefault();
-            if (element == null) return value.ToString().ToDisplayName();
+            string id = ((byte)value).ToString();
+            XElement element = game.Element("Entries").Elements("Entry").Where(entry => entry.Element("id").Value == id).FirstOrDefault();
+            return element == null ? value.ToString().ToDisplayName() : EncodeColor(element.Element("Text").Value, element.Element("Color").Value);
+        }
+
+        public FormattedString OfSpyResult(LocalizationTable value)
+        {
+            string id = string.Format("SpyResult_{0}", (byte)value);
+            XElement element = game.Element("Entries").Elements("Entry").Where(entry => entry.Element("id").Value == id).FirstOrDefault();
+            return element == null ? string.Format("Spy Result: {0}", Of(value)) : EncodeColor(element.Element("Text").Value, element.Element("Color").Value);
+        }
+
+        protected FormattedString EncodeColor(string message, string rawColor)
+        {
             ConsoleColor bg = ConsoleColor.Black;
             ConsoleColor fg = ConsoleColor.White;
-            string rawColor = element.Element("Color").Value;
             if (rawColor == "0xFF0000") bg = ConsoleColor.DarkRed;
             else if (rawColor == "0x00FF00") bg = ConsoleColor.DarkGreen;
             else if (rawColor == "0x505050") fg = ConsoleColor.Green;
             else if (rawColor == "0x00CCFF") bg = ConsoleColor.Blue;
-            return (element.Element("Text").Value, fg, bg);
+            return (message, fg, bg);
         }
 
         protected XDocument LoadResource(string path)

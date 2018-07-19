@@ -83,23 +83,6 @@ namespace ToSTextClient
         public static FormattedString operator +(string a, FormattedString b) => new FormattedString(a + b.Value, b.Foreground, b.Background);
     }
 
-    [Flags]
-    enum CommandContext
-    {
-        NONE,
-        AUTHENTICATING,
-        HOME = AUTHENTICATING << 1,
-        LOBBY = HOME << 1,
-        HOST = LOBBY << 1,
-        GAME = HOST << 1,
-        PICK_NAMES = GAME << 1,
-        NIGHT = PICK_NAMES << 1,
-        DAY = NIGHT << 1,
-        VOTING = DAY << 1,
-        JUDGEMENT = VOTING << 1,
-        POST_GAME = JUDGEMENT << 1
-    }
-
     enum RedrawResult
     {
         SUCCESS,

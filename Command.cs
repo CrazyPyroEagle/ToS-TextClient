@@ -231,4 +231,23 @@ namespace ToSTextClient
 
         private static IEnumerable<string> GetEnumValueDocs<Type>() => Enum.GetNames(typeof(Type)).Select(n => string.Format("({0}) {1}", Enum.Format(typeof(Type), Enum.Parse(typeof(Type), n), "d"), n.ToDisplayName()));
     }
+
+    [Flags]
+    enum CommandContext
+    {
+        NONE,
+        AUTHENTICATING,
+        HOME = AUTHENTICATING << 1,
+        LOBBY = HOME << 1,
+        HOST = LOBBY << 1,
+        GAME = HOST << 1,
+        PICK_NAMES = GAME << 1,
+        NIGHT = PICK_NAMES << 1,
+        DAY = NIGHT << 1,
+        VOTING = DAY << 1,
+        JUDGEMENT = VOTING << 1,
+        POST_GAME = JUDGEMENT << 1,
+        DUEL_DEFENDING = POST_GAME << 1,
+        DUEL_ATTACKING = POST_GAME << 1
+    }
 }

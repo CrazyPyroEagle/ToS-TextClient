@@ -15,7 +15,7 @@ namespace ToSTextClient
 {
     class TextClient
     {
-        public const uint BUILD_NUMBER = 9706u;     // Live = 9706 / PTR = 9266
+        public const uint BUILD_NUMBER = 9706u;     // Live = 9706 / PTR = 9706
         private static readonly byte[] MODULUS = new byte[] { 0xce, 0x22, 0x31, 0xcc, 0xc2, 0x33, 0xed, 0x95, 0xf8, 0x28, 0x6e, 0x77, 0xd7, 0xb4, 0xa6, 0x55, 0xe0, 0xad, 0xf5, 0x26, 0x08, 0x7b, 0xff, 0xaa, 0x2f, 0x78, 0x6a, 0x3f, 0x93, 0x54, 0x5f, 0x48, 0xb5, 0x89, 0x39, 0x83, 0xef, 0x1f, 0x61, 0x15, 0x1f, 0x18, 0xa0, 0xe1, 0xdd, 0x02, 0xa7, 0x42, 0x27, 0x77, 0x71, 0x8b, 0x79, 0xe9, 0x90, 0x8b, 0x0e, 0xe8, 0x4a, 0x33, 0xd2, 0x5d, 0xde, 0x1f, 0xb4, 0x7d, 0xf4, 0x35, 0xf5, 0xea, 0xf6, 0xe7, 0x04, 0x2c, 0xaf, 0x03, 0x71, 0xe4, 0x6f, 0x50, 0x7f, 0xd2, 0x70, 0x70, 0x39, 0xee, 0xa6, 0x0a, 0xae, 0xf7, 0xbc, 0x17, 0x51, 0x81, 0xf1, 0xd4, 0xf1, 0x33, 0x85, 0xf4, 0xab, 0x54, 0x3b, 0x1e, 0x42, 0x56, 0xa4, 0x79, 0xd1, 0x4e, 0xcc, 0xb4, 0xaa, 0xaa, 0x73, 0xa3, 0x35, 0xf4, 0xe6, 0x57, 0x66, 0xe6, 0x52, 0x0e, 0x51, 0x8b, 0x7e, 0x26, 0xe8, 0x63, 0xdf, 0x58, 0x57, 0x6b, 0x87, 0xdd, 0xd5, 0xf2, 0xb0, 0x58, 0x73, 0x7b, 0x10, 0x99, 0x5a, 0x99, 0x80, 0xe3, 0x8d, 0xde, 0x57, 0x98, 0xac, 0x9a, 0xf8, 0xf7, 0x37, 0x2c, 0x6f, 0x46, 0x4f, 0xf8, 0xba, 0xc8, 0x59, 0x57, 0x9d, 0x2f, 0xac, 0x38, 0xd8, 0x88, 0x89, 0xcd, 0x12, 0x3e, 0x08, 0x09, 0xb4, 0xcd, 0x5d, 0x05, 0x0b, 0x16, 0xce, 0x80, 0x6a, 0x19, 0xad, 0xea, 0xa9, 0xa2, 0x6c, 0x40, 0xba, 0x6d, 0x19, 0x74, 0x4b, 0x84, 0xd9, 0x46, 0xdc, 0xee, 0x93, 0x66, 0xb7, 0x4e, 0x98, 0xa7, 0x2c, 0x9a, 0x28, 0x0d, 0x3b, 0x7d, 0xb3, 0x90, 0x6f, 0x45, 0x18, 0x7c, 0x0c, 0xb1, 0x59, 0x5a, 0xb9, 0x16, 0xa2, 0x38, 0x2b, 0xcd, 0x2d, 0x2c, 0x48, 0xd7, 0x0d, 0xcc, 0xf0, 0x17, 0x60, 0x5c, 0x93, 0x39, 0x81, 0x28, 0xbd, 0x65, 0x8a, 0x5b, 0xb4, 0xe0, 0x51, 0x87, 0xc0, 0x77 };
         private static readonly byte[] EXPONENT = new byte[] { 0x01, 0x00, 0x01 };
 
@@ -71,10 +71,11 @@ namespace ToSTextClient
                 SecureString pwrd = ReadPassword();
                 Console.WriteLine("(hidden)", pwrd.Length);
                 RSA rsa = RSA.Create();
-                RSAParameters rsaParams = new RSAParameters();
-                rsaParams.Modulus = MODULUS;
-                rsaParams.Exponent = EXPONENT;
-                rsa.ImportParameters(rsaParams);
+                rsa.ImportParameters(new RSAParameters
+                {
+                    Modulus = MODULUS,
+                    Exponent = EXPONENT
+                });
                 byte[] pwrdb = ToByteArray(pwrd);
                 byte[] encpw = rsa.Encrypt(pwrdb, RSAEncryptionPadding.Pkcs1);
                 Array.Clear(pwrdb, 0, pwrdb.Length);
@@ -152,6 +153,26 @@ namespace ToSTextClient
                 Parser.SetDayChoice(target);
                 UI.GameView.AppendLine(target == Player.JAILOR ? "Unset day target" : "Set day target to {0}", GameState.ToName(target));
             }), "td", "targetday");
+            UI.RegisterCommand(new Command<DuelAttack>("Attack with your {0}", CommandContext.DUEL_ATTACKING, ArgumentParsers.ForEnum<DuelAttack>(UI, "Attack", true), (cmd, attack) =>
+            {
+                Parser.SetPirateChoice((byte)attack);
+                UI.GameView.AppendLine("You have decided to attack with your {0}", attack.ToString().ToLower().Replace('_', ' '));
+            }), "attack");
+            UI.RegisterCommand(new Command<DuelDefense>("Defend with your {0}", CommandContext.DUEL_ATTACKING, ArgumentParsers.ForEnum<DuelDefense>(UI, "Defense"), (cmd, defense) =>
+            {
+                Parser.SetPirateChoice((byte)defense);
+                UI.GameView.AppendLine("You have decided to defend with your {0}", defense.ToString().ToLower().Replace('_', ' '));
+            }), "defense");
+            UI.RegisterCommand(new Command<Potion>("Use the {0} potion", CommandContext.NIGHT, ArgumentParsers.ForEnum<Potion>(UI), (cmd, potion) =>
+            {
+                Parser.SetPotionMasterChoice(potion);
+                UI.GameView.AppendLine("You have decided to use the {0} potion", potion.ToString().ToLower().Replace('_', ' '));
+            }), "potion");
+            UI.RegisterCommand(new Command<LocalizationTable>("Make your target see {0}", CommandContext.NIGHT, ArgumentParsers.ForEnum<LocalizationTable>(UI), (cmd, message) =>
+            {
+                Parser.SetHypnotistChoice(message);
+                UI.GameView.AppendLine("Your target will see: {0}", Localization.Of(message));
+            }), "hm", "hypnotizemessage");
             UI.RegisterCommand(new Command<Player>("Vote {0} up to the stand", CommandContext.VOTING, ArgumentParsers.Player(UI), (cmd, target) => Parser.SetVote(target)), "v", "vote");
             UI.RegisterCommand(new Command("Vote guilty", CommandContext.JUDGEMENT, cmd => Parser.JudgementVoteGuilty()), "g", "guilty");
             UI.RegisterCommand(new Command("Vote innocent", CommandContext.JUDGEMENT, cmd => Parser.JudgementVoteInnocent()), "i", "innocent");
@@ -163,7 +184,7 @@ namespace ToSTextClient
                 UI.GameView.AppendLine(("Reported {0} for {1}", ConsoleColor.Yellow, ConsoleColor.Black), GameState.ToName(player), reason.ToString().ToLower().Replace('_', ' '));
             }), "report");
             UI.RegisterCommand(new CommandGroup("Use the {0} system command", UI, "Subcommand", "Subcommands")
-                .Register(new Command<Role>("Set your role for this game", CommandContext.LOBBY | CommandContext.PICK_NAMES, ArgumentParsers.ForEnum<Role>(UI), (cmd, role) => Parser.SendSystemMessage(SystemCommand.SET_ROLE, ((byte)role).ToString())), "setrole"));
+                .Register(new Command<Role>("Set your role for this game", CommandContext.LOBBY | CommandContext.PICK_NAMES, ArgumentParsers.ForEnum<Role>(UI), (cmd, role) => Parser.SendSystemMessage(SystemCommand.SET_ROLE, ((byte)role).ToString())), "setrole"), "system");
             UI.HomeView.ReplaceLine(0, "Authenticating...");
             UI.RedrawView(UI.HomeView);
             QueueReceive();
@@ -383,6 +404,7 @@ namespace ToSTextClient
                     playerState.Dead = true;
                     UI.GameView.AppendLine(("{0} died", ConsoleColor.DarkRed), GameState.ToName(playerID));
                     GameState.Graveyard.Add(playerState);
+                    UI.RedrawView(UI.GraveyardView);
                     if (causes.Count > 0) UI.GameView.AppendLine("Death causes: {0}", string.Join(", ", causes.Select(dc => dc.ToString().ToDisplayName())));
                     UI.GameView.AppendLine("Their role was {0}", roleID.ToString().ToDisplayName());
                     break;
@@ -579,7 +601,7 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.MAFIOSO_PROMOTED_TO_GODFATHER:
                     UI.GameView.AppendLine("You have been promoted to Godfather");
-                    // TODO: Check if role should be changed (as well as for the other role change messages).
+                    GameState.Role = Role.GODFATHER;
                     break;
                 case ServerMessageType.MAFIOSO_PROMOTED_TO_GODFATHER_UPDATE_MAFIA:
                     ServerMessageParsers.MAFIOSO_PROMOTED_TO_GODFATHER_UPDATE_MAFIA.Build(buffer, index, length).Parse(out playerID);
@@ -701,7 +723,8 @@ namespace ToSTextClient
                     break;
                 // Add missing cases here
                 case ServerMessageType.VAMPIRE_PROMOTION:
-                    UI.GameView.AppendLine(("You have been bitten by a Vampire", ConsoleColor.DarkRed));        // TODO: Check if I should set role here.
+                    UI.GameView.AppendLine(("You have been bitten by a Vampire", ConsoleColor.DarkRed));
+                    GameState.Role = Role.VAMPIRE;
                     break;
                 case ServerMessageType.OTHER_VAMPIRES:
                     GameState.Team.Clear();
@@ -729,7 +752,8 @@ namespace ToSTextClient
                     targetID.MatchSome(id => UI.GameView.AppendLine("{0} is now the youngest vampire", GameState.ToName(id)));
                     break;
                 case ServerMessageType.VAMPIRE_HUNTER_PROMOTED:
-                    UI.GameView.AppendLine(("All vampires have died, so you have become a vigilante with 1 bullet", ConsoleColor.DarkGreen));     // TODO: Check if I should set role here.
+                    UI.GameView.AppendLine(("All vampires have died, so you have become a vigilante with 1 bullet", ConsoleColor.DarkGreen));
+                    GameState.Role = Role.VIGILANTE;
                     break;
                 case ServerMessageType.VAMPIRE_VISITED_MESSAGE:
                     ServerMessageParsers.VAMPIRE_VISITED_MESSAGE.Build(buffer, index, length).Parse(out playerID);
@@ -741,6 +765,81 @@ namespace ToSTextClient
                     UI.GameView.AppendLine(("A transporter transported {0} and {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID), GameState.ToName(receiverID));
                     break;
                 // Add missing cases here
+                case ServerMessageType.TRACKER_NIGHT_ABILITY:
+                    ServerMessageParsers.TRACKER_NIGHT_ABILITY.Build(buffer, index, length).Parse(out playerID);
+                    UI.GameView.AppendLine(("{0} was visited by your target", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID));
+                    break;
+                case ServerMessageType.AMBUSHER_NIGHT_ABILITY:
+                    ServerMessageParsers.AMBUSHER_NIGHT_ABILITY.Build(buffer, index, length).Parse(out playerID);
+                    UI.GameView.AppendLine(("{0} was seen preparing an ambush while visiting your target", ConsoleColor.DarkRed), GameState.ToName(playerID));
+                    break;
+                case ServerMessageType.GUARDIAN_ANGEL_PROTECTION:
+                    ServerMessageParsers.GUARDIAN_ANGEL_PROTECTION.Build(buffer, index, length).Parse(out playerID);
+                    UI.GameView.AppendLine(("{0} was protected by a Guardian Angel", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID));
+                    break;
+                case ServerMessageType.PIRATE_DUEL:
+                    UI.CommandContext |= CommandContext.DUEL_DEFENDING;
+                    UI.GameView.AppendLine(("You have been challenged to a duel by the Pirate", ConsoleColor.DarkRed));
+                    break;
+                case ServerMessageType.DUEL_TARGET:
+                    UI.CommandContext |= CommandContext.DUEL_ATTACKING;
+                    UI.GameView.AppendLine(("You have challenged your target to a duel", ConsoleColor.Green, ConsoleColor.Black));
+                    break;
+                // Add missing cases here
+                case ServerMessageType.HAS_NECRONOMICON:
+                    byte nightsUntil = 0;
+                    ServerMessageParsers.HAS_NECRONOMICON.Build(buffer, index, length).Parse(out bool noNecronomicon).Parse(!noNecronomicon, p => p, p => p.Parse(out nightsUntil));
+                    UI.GameView.AppendLine((noNecronomicon ? "{0} nights until the Coven possess the Necronomicon" : "The Coven now possess the Necronomicon", ConsoleColor.Green, ConsoleColor.Black), nightsUntil);
+                    break;
+                case ServerMessageType.OTHER_WITCHES:
+                    GameState.Team.Clear();
+                    ServerMessageParsers.OTHER_WITCHES.Build(buffer, index, length).Parse(parser =>
+                    {
+                        RootParser root = parser.Parse(out playerID).Parse(out roleID);
+                        PlayerState teammate = GameState.Players[(int)playerID];
+                        teammate.Role = roleID;
+                        GameState.Team.Add(teammate);
+                        return root;
+                    }, out _);
+                    UI.OpenSideView(UI.TeamView);
+                    break;
+                case ServerMessageType.PSYCHIC_NIGHT_ABILITY:
+                    Player playerID3 = Player.JAILOR;
+                    ServerMessageParsers.PSYCHIC_NIGHT_ABILITY.Build(buffer, index, length).Parse(out bool isEvil).Parse(out playerID).Parse(out Player playerID2).Parse(!isEvil, p => p, p => p.Parse(out playerID3));
+                    UI.GameView.AppendLine((isEvil ? "A vision revealed that {0}, {1}, or {2} is evil" : "A vision revealed that {0}, or {1} is good", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID), GameState.ToName(playerID2), GameState.ToName(playerID3));
+                    break;
+                case ServerMessageType.TRAPPER_NIGHT_ABILITY:
+                    ServerMessageParsers.TRAPPER_NIGHT_ABILITY.Build(buffer, index, length).Parse(out roleID);
+                    UI.GameView.AppendLine(("{0} has triggered your trap", ConsoleColor.DarkRed), roleID.ToString().ToDisplayName());
+                    break;
+                case ServerMessageType.TRAPPER_TRAP_STATUS:
+                    ServerMessageParsers.TRAPPER_TRAP_STATUS.Build(buffer, index, length).Parse(out TrapStatus trapStatus);
+                    UI.GameView.AppendLine(("Trap status: {0}", ConsoleColor.Green, ConsoleColor.Black), trapStatus.ToString().ToDisplayName());
+                    break;
+                case ServerMessageType.PESTILENCE_CONVERSION:
+                    GameState.Role = Role.PESTILENCE;
+                    break;
+                case ServerMessageType.JUGGERNAUT_KILL_COUNT:
+                    ServerMessageParsers.JUGGERNAUT_KILL_COUNT.Build(buffer, index, length).Parse(out byte killCount);
+                    UI.GameView.AppendLine(("You have obtained {0} kills", ConsoleColor.Green, ConsoleColor.Black), killCount);
+                    break;
+                case ServerMessageType.COVEN_GOT_NECRONOMICON:
+                    ServerMessageParsers.COVEN_GOT_NECRONOMICON.Build(buffer, index, length).Parse(out _).Parse(out playerID);
+                    UI.GameView.AppendLine(("{0} now has the Necronomicon", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID));
+                    break;
+                case ServerMessageType.GUARDIAN_ANGEL_PROMOTED:
+                    UI.GameView.AppendLine(("You failed to protect your target", ConsoleColor.DarkRed));
+                    GameState.Role = Role.SURVIVOR;
+                    break;
+                case ServerMessageType.VIP_TARGET:
+                    ServerMessageParsers.VIP_TARGET.Build(buffer, index, length).Parse(out playerID);
+                    UI.GameView.AppendLine(("{0} is the VIP", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(playerID));
+                    break;
+                case ServerMessageType.PIRATE_DUEL_OUTCOME:
+                    ServerMessageParsers.PIRATE_DUEL_OUTCOME.Build(buffer, index, length).Parse(out DuelAttack duelAttack).Parse(out DuelDefense duelDefense);
+                    UI.GameView.AppendLine(("Your {1} against the Pirate's {0}: you have {2} the duel", ConsoleColor.DarkRed), duelAttack, duelDefense, (byte)duelAttack == ((byte)duelDefense + 1) % 3 ? "lost" : "won");
+                    break;
+                // Add missing cases here
                 case ServerMessageType.ACTIVE_GAME_MODES:
                     ActiveGameModes.Clear();
                     ServerMessageParsers.ACTIVE_GAME_MODES.Build(buffer, index, length).Parse(parser =>
@@ -750,6 +849,23 @@ namespace ToSTextClient
                         return root;
                     }, out _);
                     UI.RedrawView(UI.GameModeView);
+                    break;
+                // Add missing cases here
+                case ServerMessageType.ZOMBIE_ROTTED:
+                    ServerMessageParsers.ZOMBIE_ROTTED.Build(buffer, index, length).Parse(out playerID);
+                    UI.GameView.AppendLine(("You may no longer use {0}'s night ability", ConsoleColor.Green, ConsoleColor.Black), playerID);
+                    break;
+                case ServerMessageType.LOVER_TARGET:
+                    ServerMessageParsers.LOVER_TARGET.Build(buffer, index, length).Parse(out playerID);
+                    UI.GameView.AppendLine(("{0} is your lover", ConsoleColor.Green, ConsoleColor.Black), playerID);
+                    break;
+                case ServerMessageType.PLAGUE_SPREAD:
+                    ServerMessageParsers.PLAGUE_SPREAD.Build(buffer, index, length).Parse(out playerID);
+                    UI.GameView.AppendLine(("{0} has been infected with the plague", ConsoleColor.Green, ConsoleColor.Black), playerID);
+                    break;
+                case ServerMessageType.RIVAL_TARGET:
+                    ServerMessageParsers.RIVAL_TARGET.Build(buffer, index, length).Parse(out playerID);
+                    UI.GameView.AppendLine(("{0} is your rival", ConsoleColor.Green, ConsoleColor.Black), playerID);
                     break;
                 // Add missing cases here
                 case ServerMessageType.JAILOR_DEATH_NOTE:
@@ -764,7 +880,7 @@ namespace ToSTextClient
                     ServerMessageParsers.SPY_NIGHT_INFO.Build(buffer, index, length).Parse(parser =>
                     {
                         RootParser root = parser.Parse(out tableMessage);
-                        UI.GameView.AppendLine(("Target saw message: {0}", ConsoleColor.Green, ConsoleColor.Black), tableMessage.ToString().ToDisplayName());
+                        UI.GameView.AppendLine(Localization.OfSpyResult(tableMessage));
                         return root;
                     }, out _);
                     break;
