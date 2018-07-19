@@ -50,13 +50,13 @@ namespace ToSTextClient
         {
             try
             {
-                return XDocument.Load(Combine(LOCALIZATION_ROOT, path));
+                return XDocument.Load(path);
             }
             catch (Exception ex) when (ex is IOException || ex is SecurityException)
             {
                 try
                 {
-                    return XDocument.Load(path);
+                    return XDocument.Load(Combine(LOCALIZATION_ROOT, path));
                 }
                 catch (Exception ex2) when (ex2 is IOException || ex2 is SecurityException)
                 {
