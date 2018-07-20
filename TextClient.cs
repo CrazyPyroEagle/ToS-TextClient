@@ -380,6 +380,7 @@ namespace ToSTextClient
                     UI.StatusLine = "Are you ready for the Ranked game?";
                     Timer = 10;
                     TimerText = "Queue Popup";
+                    UI.AudioAlert();
                     break;
                 // Add missing cases here
                 case ServerMessageType.RANKED_TIMEOUT_DURATION:
