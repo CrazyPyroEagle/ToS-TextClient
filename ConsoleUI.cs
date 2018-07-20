@@ -328,20 +328,6 @@ namespace ToSTextClient
                                 Console.CursorLeft = fullWidth - sideWidth - 1;
                             }
                         }
-                        /*lock (view)
-                        {
-                            lastSideHeight = view.GetFullHeight();
-                            if (lastSideHeight == 0) continue;
-                            Console.CursorTop = Math.Max(0, fullHeight - sideHeight - lastSideHeight - 1);
-                            int lineIndex = Math.Max(0, lastSideHeight + sideHeight - fullHeight + 1);
-                            view.Draw(sideWidth, lastSideHeight - lineIndex, lineIndex);
-                            sideHeight += lastSideHeight -= lineIndex;
-                        }
-                        if (sideHeight >= fullHeight - 1)
-                        {
-                            sideHeight = fullHeight - 1;
-                            break;
-                        }*/
                         lock (view)
                         {
                             sideHeight += lastSideHeight = view.GetFullHeight();
@@ -694,37 +680,8 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
-                // TODO: Change this to just move the entire side, update the views' position tracking, and fill in the missing lines.
                 mainView.Scroll(lines);
                 sideEnd -= lines = sideEnd - Math.Max(fullHeight - 2, Math.Min(sideHeight - 1, sideEnd - lines));
-                /*if (lines > 0)
-                {
-                    int line = sideEnd - sideHeight, lastHeight = 0;
-                    foreach (AbstractView sideView in ((IEnumerable<AbstractView>)sideViews).Reverse())
-                    {
-                        if (line > 0 && line < fullHeight - 1 && lastHeight != 0)
-                        {
-                            Console.CursorTop = ++line + 1;
-                            Console.CursorLeft = fullWidth - sideWidth - 1;
-                            Console.Write("".PadRight(sideWidth, '-'));
-                        }
-                        line += lastHeight = sideView.Move(lines, fullHeight - 2);
-                    }
-                }
-                else if (lines < 0)
-                {
-                    int line = sideEnd, lastHeight = 0;
-                    foreach (AbstractView sideView in sideViews)
-                    {
-                        if (line > 0 && line < fullHeight - 1 && lastHeight != 0)
-                        {
-                            Console.CursorTop = --line;
-                            Console.CursorLeft = fullWidth - sideWidth - 1;
-                            Console.Write("".PadRight(sideWidth, '-'));
-                        }
-                        line -= lastHeight = sideView.Move(lines, fullHeight - 2);
-                    }
-                }*/
                 if (lines > 0)
                 {
                     Console.MoveBufferArea(mainWidth + 1, lines, sideWidth, fullHeight - lines - 2, mainWidth + 1, 0);
@@ -856,8 +813,6 @@ namespace ToSTextClient
             lastDrawnTop -= lines;
             if (lines > 0)
             {
-                // pos - lastHeight <= View < pos
-                // drawOffset - lines - 1 <= Draw < drawOffset - 1
                 int drawLower = Math.Max(pos - lastHeight, drawOffset - lines);
                 int drawUpper = Math.Min(pos, drawOffset);
                 if (drawUpper - drawLower > 0)
@@ -869,8 +824,6 @@ namespace ToSTextClient
             }
             else if (lines < 0)
             {
-                // pos - lastHeight <= View < pos
-                // drawOffset <= Draw < drawOffset - lines
                 int drawLower = Math.Max(--pos - lastHeight, drawOffset);
                 int drawUpper = Math.Min(pos, drawOffset - lines);
                 if (drawUpper - drawLower > 0)
@@ -880,38 +833,6 @@ namespace ToSTextClient
                     DrawUnsafe(lastWidth, drawUpper - drawLower, lastStartLine + drawLower - pos + lastHeight);
                 }
             }
-            /*if (lastWidth == 0 || lastHeight == 0) return lastHeight;
-            if (lines > 0)
-            {
-                int offset = Math.Min(0, lastDrawnTop -= lines);
-                int moveTop = Math.Max(0, lastDrawnTop);
-                int moveHeight = Math.Min(lastHeight + offset, screenHeight - moveTop - lines);
-                if (moveHeight > 0) Console.MoveBufferArea(lastDrawnLeft, moveTop + lines, lastWidth, moveHeight, lastDrawnLeft, moveTop);
-                int drawLines = Math.Min(lines, screenHeight - moveTop);
-                if (drawLines > 0)
-                {
-                    Console.CursorTop = screenHeight - lines;
-                    Console.CursorLeft = lastDrawnLeft;
-                    DrawUnsafe(lastWidth, drawLines, lastStartLine - offset + moveHeight);
-                }
-            }
-            else if (lines < 0)
-            {
-                lines = -lines;
-                int offset = Math.Min(0, lastDrawnTop);
-                int moveTop = Math.Max(0, lastDrawnTop);
-                int moveHeight = Math.Min(lastHeight + offset, screenHeight - moveTop - lines);
-                if (moveHeight > 0) Console.MoveBufferArea(lastDrawnLeft, moveTop, lastWidth, moveHeight, lastDrawnLeft, moveTop + lines);
-                int drawLines = Math.Min(lines, lastStartLine - offset);
-                offset = Math.Min(0, lastDrawnTop += lines);
-                moveTop = Math.Max(0, lastDrawnTop);
-                if (drawLines > 0)
-                {
-                    Console.CursorTop = moveTop;
-                    Console.CursorLeft = lastDrawnLeft;
-                    DrawUnsafe(lastWidth, drawLines, lastStartLine - offset);
-                }
-            }*/
             return lastHeight;
         }
         protected abstract int DrawUnsafe(int width, int height, int startLine = 0);

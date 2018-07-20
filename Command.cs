@@ -206,6 +206,11 @@ namespace ToSTextClient
             copy = value;
             return true;
         }, Enumerable.Empty<string>);
+        public static ArgumentParser<string> Username(ITextUI ui) => new ArgumentParser<string>("[Username]", "A username", (string value, out string copy) =>
+        {
+            copy = value;
+            return !value.Contains(' ');
+        }, Enumerable.Empty<string>);
         
         public static ArgumentParser<Player> Player(ITextUI ui) => new ArgumentParser<Player>("[Player]", "The name or number of a player", (string value, out Player player) => ui.GameState.TryParsePlayer(value, out player), () => ui.GameState.Players.Select(ps => ui.GameState.ToName(ps, true)), () => ui.StatusLine = "Invalid player");
         public static ArgumentParser<TEnum> ForEnum<TEnum>(ITextUI ui, string name = null, bool an = false) where TEnum : struct => new ArgumentParser<TEnum>(name ?? string.Format("[{0}]", typeof(TEnum).Name.AddSpacing().ToDisplayName()), string.Format("The name or ID of {0} {1}", an ? "an" : "a", typeof(TEnum).Name.AddSpacing().ToLower()), TryParseEnum, GetEnumValueDocs<TEnum>, () => ui.StatusLine = string.Format("Invalid {0}", typeof(TEnum).Name.AddSpacing().ToLower()));
