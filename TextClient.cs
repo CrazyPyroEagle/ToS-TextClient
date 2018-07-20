@@ -269,8 +269,10 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.CREATE_LOBBY:
                     ServerMessageParsers.CREATE_LOBBY.Build(buffer, index, length).Parse(out bool host).Parse(out GameMode gameMode);
-                    GameState = new GameState(this, gameMode);
-                    GameState.Host = host;
+                    GameState = new GameState(this, gameMode)
+                    {
+                        Host = host
+                    };
                     break;
                 case ServerMessageType.SET_HOST:
                     GameState.Host = true;
@@ -434,7 +436,7 @@ namespace ToSTextClient
                 // Add missing cases here
                 case ServerMessageType.MODERATOR_MESSAGE:
                     ServerMessageParsers.MODERATOR_MESSAGE.Build(buffer, index, length).Parse(out ModeratorMessage modMessageID);
-                    UI.GameView.AppendLine((modMessageID.ToString().ToDisplayName(), ConsoleColor.Yellow, ConsoleColor.Black));
+                    UI.GameView.AppendLine(Localization.Of(modMessageID));
                     break;
                 // Add missing cases here
                 case ServerMessageType.USER_JOINING_LOBBY_TOO_QUICKLY_MESSAGE:

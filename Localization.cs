@@ -14,11 +14,13 @@ namespace ToSTextClient
 
         protected ITextUI ui;
         protected XDocument game;
+        protected XDocument mod;
 
         public Localization(ITextUI ui)
         {
             this.ui = ui;
             game = LoadResource("Game.xml");
+            mod = LoadResource("Mod.xml");
         }
 
         public FormattedString Of(LocalizationTable value)
@@ -33,6 +35,13 @@ namespace ToSTextClient
             string id = string.Format("SpyResult_{0}", (byte)value);
             XElement element = game.Element("Entries").Elements("Entry").Where(entry => entry.Element("id").Value == id).FirstOrDefault();
             return element == null ? string.Format("Spy Result: {0}", Of(value)) : EncodeColor(element.Element("Text").Value, element.Element("Color").Value);
+        }
+
+        public FormattedString Of(ModeratorMessage value)
+        {
+            string id = ((byte)(value + 1)).ToString();
+            XElement element = mod.Element("Entries").Elements("Entry").Where(entry => entry.Element("id").Value == id).FirstOrDefault();
+            return element == null ? value.ToString().ToDisplayName() : EncodeColor(element.Element("Text").Value, element.Element("Color").Value);
         }
 
         protected FormattedString EncodeColor(string message, string rawColor)
