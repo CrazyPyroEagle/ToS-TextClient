@@ -34,7 +34,7 @@ namespace ToSTextClient
         void Run();
     }
 
-    interface IView { }
+    interface IView : IContextual { }
 
     interface ITextView : IView
     {

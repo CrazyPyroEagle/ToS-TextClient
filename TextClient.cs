@@ -47,6 +47,8 @@ namespace ToSTextClient
                 {
                     UI.CommandContext = CommandContext.HOME;
                     UI.SetMainView(UI.HomeView);
+                    UI.LastWillView.Title = "";
+                    UI.LastWillView.Value = "";
                     _GameState = value;
                 }
             }
@@ -125,17 +127,17 @@ namespace ToSTextClient
             UI.RegisterCommand(new Command("Leave the game", (CommandContext.LOBBY | CommandContext.GAME).Any(), cmd => Parser.LeaveGame()), "leave");
             UI.RegisterCommand(new Command("Leave the post-game lobby", CommandContext.POST_GAME.Any(), cmd => Parser.LeavePostGameLobby()), "leavepost");
             UI.RegisterCommand(new Command("Vote to repick the host", CommandContext.LOBBY.Any(), cmd => Parser.VoteToRepickHost()), "repick");
-            UI.RegisterCommand(new Command<Role>("Add {0} to the role list", CommandContext.HOST.Any(), ArgumentParsers.ForEnum<Role>(UI), (cmd, role) =>
+            UI.RegisterCommand(new Command<Role>("Add {0} to the role list", (CommandContext.LOBBY | CommandContext.HOST).All(), ArgumentParsers.ForEnum<Role>(UI), (cmd, role) =>
             {
                 Parser.ClickedOnAddButton(role);
                 GameState.AddRole(role);
             }), "add");
-            UI.RegisterCommand(new Command<byte>("Remove {0} from the role list", CommandContext.HOST.Any(), ArgumentParsers.Position(UI), (cmd, position) =>
+            UI.RegisterCommand(new Command<byte>("Remove {0} from the role list", (CommandContext.LOBBY | CommandContext.HOST).All(), ArgumentParsers.Position(UI), (cmd, position) =>
             {
                 Parser.ClickedOnRemoveButton(position);
                 GameState.RemoveRole(position);
             }), "remove");
-            UI.RegisterCommand(new Command("Force the game to start", CommandContext.HOST.Any(), cmd => Parser.ClickedOnStartButton()), "start");
+            UI.RegisterCommand(new Command("Force the game to start", (CommandContext.LOBBY | CommandContext.HOST).All(), cmd => Parser.ClickedOnStartButton()), "start");
             UI.RegisterCommand(new Command<string>("Set your name to {0}", CommandContext.PICK_NAMES.Any(), ArgumentParsers.Text(UI, "Name"), (cmd, name) => Parser.ChooseName(name)), "n", "name");
             UI.RegisterCommand(new Command<Player>("Set your target to {0}", CommandContext.NIGHT.Any(), ArgumentParsers.Player(UI), (cmd, target) =>
             {
@@ -273,10 +275,8 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.CREATE_LOBBY:
                     ServerMessageParsers.CREATE_LOBBY.Build(buffer, index, length).Parse(out bool host).Parse(out GameMode gameMode);
-                    GameState = new GameState(this, gameMode)
-                    {
-                        Host = host
-                    };
+                    GameState = new GameState(this, gameMode);
+                    GameState.Host = host;
                     break;
                 case ServerMessageType.SET_HOST:
                     GameState.Host = true;

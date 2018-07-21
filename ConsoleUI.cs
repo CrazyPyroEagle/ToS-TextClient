@@ -56,7 +56,7 @@ namespace ToSTextClient
             get => _StatusLine;
             set { _StatusLine = value; RedrawCursor(); }
         }
-        public CommandContext CommandContext { get => _CommandContext; set { _CommandContext = value; UpdateCommandMode(); RedrawView(helpView); } }
+        public CommandContext CommandContext { get => _CommandContext; set { CommandContext old = _CommandContext; _CommandContext = value; UpdateCommandMode(); if (sideViews.Where(view => view.IsAllowed(old) != view.IsAllowed(value)).Count() > 0) RedrawSideViews(); else RedrawView(helpView); } }
         public bool RunInput { get => _RunInput; set => _RunInput = value; }
         
         protected EditableWillView myLastWillView;
@@ -76,13 +76,13 @@ namespace ToSTextClient
 
             ExceptionView = new ExceptionView(60, 10);
             AuthView = new AuthView(this);
-            HomeView = new TextView(this, UpdateView, 60, 2);
-            GameModeView = new ListView<GameMode>(" # Game Modes", () => game.ActiveGameModes, gm => gm.ToString().ToDisplayName(), 25);
-            GameView = new TextView(this, UpdateView, 60, 20);
-            PlayerListView = new ListView<PlayerState>(" # Players", () => game.GameState.Players, p => p.Dead ? "" : game.GameState.ToName(p.Self, true), 25);
-            RoleListView = new ListView<Role>(" # Role List", () => game.GameState.Roles, r => r.ToString().ToDisplayName(), 25);
-            GraveyardView = new ListView<PlayerState>(" # Graveyard", () => game.GameState.Graveyard, ps => game.GameState.ToName(ps, true), 40);
-            TeamView = new ListView<PlayerState>(" # Team", () => game.GameState.Team, ps => !ps.Dead || ps.Role == Role.DISGUISER ? game.GameState.ToName(ps, true) : "", 40);
+            HomeView = new TextView(this, UpdateView, CommandContext.HOME.Any(), 60, 2);
+            GameModeView = new ListView<GameMode>(" # Game Modes", () => game.ActiveGameModes, gm => gm.ToString().ToDisplayName(), CommandContext.HOME.Any(), 25);
+            GameView = new TextView(this, UpdateView, (CommandContext.LOBBY | CommandContext.GAME).Any(), 60, 20);
+            PlayerListView = new ListView<PlayerState>(" # Players", () => game.GameState.Players, p => p.Dead ? "" : game.GameState.ToName(p.Self, true), (CommandContext.LOBBY | CommandContext.GAME).Any(), 25);
+            RoleListView = new ListView<Role>(" # Role List", () => game.GameState.Roles, r => r.ToString().ToDisplayName(), (CommandContext.LOBBY | CommandContext.GAME).Any(), 25);
+            GraveyardView = new ListView<PlayerState>(" # Graveyard", () => game.GameState.Graveyard, ps => game.GameState.ToName(ps, true), CommandContext.GAME.Any(), 40);
+            TeamView = new ListView<PlayerState>(" # Team", () => game.GameState.Team, ps => !ps.Dead || ps.Role == Role.DISGUISER ? game.GameState.ToName(ps, true) : "", CommandContext.GAME.Any(), 40);
             LastWillView = new WillView();
             myLastWillView = new EditableWillView(" # My Last Will", lw => game.GameState.LastWill = lw);
             myDeathNoteView = new EditableWillView(" # My Death Note", dn => game.GameState.DeathNote = dn);
@@ -106,21 +106,21 @@ namespace ToSTextClient
 
             RegisterCommand(helpCommand = new CommandGroup("View a list of available commands", this, "Topic", "Topics", cmd => helpView.Topic = null, activeContext => true), "help", "?");
             RegisterCommand(new CommandGroup("Open the {0} view", this, "View", "Views")
-                .Register(new Command("Open the help view", activeContext => true, cmd => OpenSideView(helpView)), "help")
-                .Register(new Command("Open the game modes view", CommandContext.HOME.Any(), cmd => OpenSideView(GameModeView)), "modes")
-                .Register(new Command("Open the role list view", (CommandContext.LOBBY | CommandContext.GAME).Any(), cmd => OpenSideView(RoleListView)), "roles", "rolelist")
-                .Register(new Command("Open the player list view", (CommandContext.LOBBY | CommandContext.GAME).Any(), cmd => OpenSideView(PlayerListView)), "players", "playerlist")
-                .Register(new Command("Open the graveyard view", CommandContext.GAME.Any(), cmd => OpenSideView(GraveyardView)), "graveyard")
-                .Register(new Command("Open the team view", CommandContext.GAME.Any(), cmd => OpenSideView(TeamView)), "team")
-                .Register(new Command("Open the LW/DN view", CommandContext.GAME.Any(), cmd => OpenSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "open");
+                .Register(new Command("Open the help view", helpView.IsAllowed, cmd => OpenSideView(helpView)), "help")
+                .Register(new Command("Open the game modes view", GameModeView.IsAllowed, cmd => OpenSideView(GameModeView)), "modes")
+                .Register(new Command("Open the role list view", RoleListView.IsAllowed, cmd => OpenSideView(RoleListView)), "roles", "rolelist")
+                .Register(new Command("Open the player list view", PlayerListView.IsAllowed, cmd => OpenSideView(PlayerListView)), "players", "playerlist")
+                .Register(new Command("Open the graveyard view", GraveyardView.IsAllowed, cmd => OpenSideView(GraveyardView)), "graveyard")
+                .Register(new Command("Open the team view", TeamView.IsAllowed, cmd => OpenSideView(TeamView)), "team")
+                .Register(new Command("Open the LW/DN view", LastWillView.IsAllowed, cmd => OpenSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "open");
             RegisterCommand(new CommandGroup("Close the {0} view", this, "View", "Views")
-                .Register(new Command("Close the help view", activeContext => true, cmd => CloseSideView(helpView)), "help")
-                .Register(new Command("Close the game modes view", CommandContext.HOME.Any(), cmd => CloseSideView(GameModeView)), "modes")
-                .Register(new Command("Close the role list view", (CommandContext.LOBBY | CommandContext.GAME).Any(), cmd => CloseSideView(RoleListView)), "roles", "rolelist")
-                .Register(new Command("Close the player list view", (CommandContext.LOBBY | CommandContext.GAME).Any(), cmd => CloseSideView(PlayerListView)), "players", "playerlist")
-                .Register(new Command("Close the graveyard view", CommandContext.GAME.Any(), cmd => CloseSideView(GraveyardView)), "graveyard")
-                .Register(new Command("Close the team view", CommandContext.GAME.Any(), cmd => CloseSideView(TeamView)), "team")
-                .Register(new Command("Close the LW/DN view", CommandContext.GAME.Any(), cmd => CloseSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "close");
+                .Register(new Command("Close the help view", helpView.IsAllowed, cmd => CloseSideView(helpView)), "help")
+                .Register(new Command("Close the game modes view", GameModeView.IsAllowed, cmd => CloseSideView(GameModeView)), "modes")
+                .Register(new Command("Close the role list view", RoleListView.IsAllowed, cmd => CloseSideView(RoleListView)), "roles", "rolelist")
+                .Register(new Command("Close the player list view", PlayerListView.IsAllowed, cmd => CloseSideView(PlayerListView)), "players", "playerlist")
+                .Register(new Command("Close the graveyard view", GraveyardView.IsAllowed, cmd => CloseSideView(GraveyardView)), "graveyard")
+                .Register(new Command("Close the team view", TeamView.IsAllowed, cmd => CloseSideView(TeamView)), "team")
+                .Register(new Command("Close the LW/DN view", LastWillView.IsAllowed, cmd => CloseSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "close");
             RegisterCommand(new Command("Redraw the whole screen", activeContext => true, cmd => RedrawAll()), "redraw");
             RegisterCommand(new Command<Option<Player>>("Edit your LW or view {0}'s", CommandContext.GAME.Any(), ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
             {
@@ -328,18 +328,19 @@ namespace ToSTextClient
                 if (sideViews.Count > 0)
                 {
                     int maxMinWidth = 0;
-                    foreach (AbstractView view in sideViews) maxMinWidth = Math.Max(view.GetMinimumWidth(), maxMinWidth);
+                    foreach (AbstractView view in sideViews.Where(view => view.IsAllowed(_CommandContext))) maxMinWidth = Math.Max(view.GetMinimumWidth(), maxMinWidth);
                     if (maxMinWidth != sideWidth) RedrawAll();
-                    if (sideViews.Where(v => v.GetMinimumWidth() > sideWidth).Any())
+                    if (sideViews.Where(view => view.IsAllowed(_CommandContext)).Where(v => v.GetMinimumWidth() > sideWidth).Any())
                     {
                         RedrawAll();
                         return;
                     }
+                    if (sideWidth <= 0) return;
                     RedrawTimer();
                     int lastSideHeight = 1;
                     sideHeight = 0;
                     sideEnd = fullHeight - 2;
-                    foreach (AbstractView view in sideViews)
+                    foreach (AbstractView view in sideViews.Where(view => view.IsAllowed(_CommandContext)))
                     {
                         Console.CursorLeft = fullWidth - sideWidth - 1;
                         if (lastSideHeight != 0)
@@ -360,19 +361,14 @@ namespace ToSTextClient
                     for (int currentLine = 0; currentLine < fullHeight - sideHeight - 1; currentLine++)
                     {
                         Console.CursorTop = currentLine;
-                        Console.CursorLeft = mainWidth;
-                        Console.Write("".PadRight(sideWidth + 1));
+                        Console.CursorLeft = mainWidth + 1;
+                        Console.Write("".PadRight(sideWidth));
                     }
                     for (int currentLine = 0; currentLine < fullHeight; currentLine++)
                     {
                         Console.CursorTop = currentLine;
                         Console.CursorLeft = mainWidth;
                         Console.Write('|');
-                        if (currentLine < fullHeight - 1)
-                        {
-                            Console.CursorLeft = fullWidth - 2;
-                            Console.WriteLine();
-                        }
                     }
                 }
                 else if (sideWidth > 0)
@@ -429,7 +425,7 @@ namespace ToSTextClient
                 Console.Clear();
                 Console.WindowHeight = Console.BufferHeight = fullHeight = Math.Max(mainView.GetMinimumHeight() + 1, Console.WindowHeight);
                 sideWidth = 0;
-                foreach (AbstractView view in sideViews) sideWidth = Math.Max(sideWidth, view.GetMinimumWidth());
+                foreach (AbstractView view in sideViews.Where(view => view.IsAllowed(_CommandContext))) sideWidth = Math.Max(sideWidth, view.GetMinimumWidth());
                 int minimumWidth = sideWidth + mainView.GetMinimumWidth() + 1;
                 int consoleWidth = Console.BufferWidth - 1;
                 if (consoleWidth < minimumWidth) Console.BufferWidth = Console.WindowWidth = (consoleWidth = minimumWidth) + 1;
@@ -740,6 +736,7 @@ namespace ToSTextClient
 
     abstract class AbstractView : IView
     {
+        protected Func<CommandContext, bool> isAllowed;
         protected int minimumWidth;
         protected int minimumHeight;
 
@@ -750,8 +747,9 @@ namespace ToSTextClient
         protected int lastHeight;
         protected int lastFullHeight;
 
-        protected AbstractView(int minimumWidth, int minimumHeight)
+        protected AbstractView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight)
         {
+            this.isAllowed = isAllowed;
             this.minimumWidth = minimumWidth;
             this.minimumHeight = minimumHeight;
         }
@@ -855,6 +853,8 @@ namespace ToSTextClient
             return lastHeight;
         }
         protected abstract int DrawUnsafe(int width, int height, int startLine = 0);
+
+        public bool IsAllowed(CommandContext activeContext) => isAllowed(activeContext);
     }
 
     class TextView : AbstractView, ITextView
@@ -864,7 +864,7 @@ namespace ToSTextClient
         protected ITextUI ui;
         protected Action<AbstractView> append;
 
-        public TextView(ITextUI ui, Action<AbstractView> append, int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight)
+        public TextView(ITextUI ui, Action<AbstractView> append, Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight) : base(isAllowed, minimumWidth, minimumHeight)
         {
             this.ui = ui;
             this.append = append;
@@ -921,7 +921,7 @@ namespace ToSTextClient
         protected Func<IList<T>> list;
         protected Func<T, string> map;
 
-        public ListView(string title, Func<IList<T>> list, Func<T, string> map, int minimumWidth) : base(minimumWidth, 1)
+        public ListView(string title, Func<IList<T>> list, Func<T, string> map, Func<CommandContext, bool> isAllowed, int minimumWidth) : base(isAllowed, minimumWidth, 1)
         {
             Title = title;
             this.list = list;
@@ -966,7 +966,7 @@ namespace ToSTextClient
         public string Title { get; set; }
         public string Value { get; set; }
 
-        public WillView() : base(WILL_WIDTH, WILL_HEIGHT + 1) => Title = Value = "";
+        public WillView() : base(CommandContext.GAME.Any(), WILL_WIDTH, WILL_HEIGHT + 1) => Title = Value = "";
 
         public override int GetFullHeight() => minimumHeight;
 
@@ -1011,7 +1011,7 @@ namespace ToSTextClient
         protected int cursorX;
         protected int cursorY;
 
-        public EditableWillView(string title, Action<string> save) : base(WillView.WILL_WIDTH, WillView.WILL_HEIGHT + 1)
+        public EditableWillView(string title, Action<string> save) : base(CommandContext.GAME.Any(), WillView.WILL_WIDTH, WillView.WILL_HEIGHT + 1)
         {
             Title = title;
             this.save = save;
@@ -1223,7 +1223,7 @@ namespace ToSTextClient
         protected Action showHelp;
         protected (IDocumented cmd, string[] names)? _Topic;
 
-        public HelpView(Dictionary<string, Command> commands, Func<CommandContext> getContext, Action showHelp, int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight)
+        public HelpView(Dictionary<string, Command> commands, Func<CommandContext> getContext, Action showHelp, int minimumWidth, int minimumHeight) : base(activeContext => true, minimumWidth, minimumHeight)
         {
             this.commands = commands;
             this.getContext = getContext;
@@ -1312,7 +1312,7 @@ namespace ToSTextClient
         protected int lineIndex;
         protected FormattedString _Status;
 
-        public AuthView(ConsoleUI ui) : base(30, 3)
+        public AuthView(ConsoleUI ui) : base(CommandContext.AUTHENTICATING.Any(), 30, 3)
         {
             this.ui = ui;
             username = new StringBuilder(20);
@@ -1514,7 +1514,7 @@ namespace ToSTextClient
     {
         public Exception Exception { get; set; }
 
-        public ExceptionView(int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight) { }
+        public ExceptionView(int minimumWidth, int minimumHeight) : base(activeContext => true, minimumWidth, minimumHeight) { }
 
         public override int GetFullHeight() => (Exception?.ToString()?.Where(c => c == '\r')?.Count() ?? -1) + 1;
 
