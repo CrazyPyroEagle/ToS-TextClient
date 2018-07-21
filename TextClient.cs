@@ -167,16 +167,17 @@ namespace ToSTextClient
                 Parser.SetPirateChoice((byte)defense);
                 UI.GameView.AppendLine("You have decided to defend with your {0}", defense.ToString().ToLower().Replace('_', ' '));
             }), "defense");
-            UI.RegisterCommand(new Command<Potion>("Use the {0} potion", CommandContext.NIGHT.Any(), ArgumentParsers.ForEnum<Potion>(UI), (cmd, potion) =>
+            UI.RegisterCommand(new Command<Potion>("Use the {0} potion", CommandContext.NIGHT.Any().And(ac => GameState.Role == Role.POTION_MASTER), ArgumentParsers.ForEnum<Potion>(UI), (cmd, potion) =>
             {
                 Parser.SetPotionMasterChoice(potion);
                 UI.GameView.AppendLine("You have decided to use the {0} potion", potion.ToString().ToLower().Replace('_', ' '));
             }), "potion");
-            UI.RegisterCommand(new Command<LocalizationTable>("Make your target see {0}", CommandContext.NIGHT.Any(), ArgumentParsers.ForEnum<LocalizationTable>(UI), (cmd, message) =>
+            UI.RegisterCommand(new Command<LocalizationTable>("Make your target see {0}", CommandContext.NIGHT.Any().And(ac => GameState.Role == Role.HYPNOTIST), ArgumentParsers.ForEnum<LocalizationTable>(UI), (cmd, message) =>
             {
                 Parser.SetHypnotistChoice(message);
                 UI.GameView.AppendLine("Your target will see: {0}", Localization.Of(message));
             }), "hm", "hypnotizemessage");
+            UI.RegisterCommand(new Command("Reveal yourself as the Mayor", CommandContext.DAY.Any().And(ac => GameState.Role == Role.MAYOR), cmd => Parser.SetDayChoice(GameState.Self)), "reveal");
             UI.RegisterCommand(new Command<Player>("Vote {0} up to the stand", CommandContext.VOTING.Any(), ArgumentParsers.Player(UI), (cmd, target) => Parser.SetVote(target)), "v", "vote");
             UI.RegisterCommand(new Command("Vote guilty", CommandContext.JUDGEMENT.Any(), cmd => Parser.JudgementVoteGuilty()), "g", "guilty");
             UI.RegisterCommand(new Command("Vote innocent", CommandContext.JUDGEMENT.Any(), cmd => Parser.JudgementVoteInnocent()), "i", "innocent");
@@ -1119,6 +1120,8 @@ namespace ToSTextClient
 
         public static Func<CommandContext, bool> Any(this CommandContext flags) => activeContext => (activeContext & flags) != 0;
         public static Func<CommandContext, bool> All(this CommandContext flags) => activeContext => (activeContext & flags) == flags;
+        public static Func<T, bool> Or<T>(this Func<T, bool> a, Func<T, bool> b) => input => a(input) || b(input);
+        public static Func<T, bool> And<T>(this Func<T, bool> a, Func<T, bool> b) => input => a(input) && b(input);
 
         public static IEnumerable<string> Wrap(this string value, int lineWidth)
         {
