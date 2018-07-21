@@ -23,6 +23,7 @@ namespace ToSTextClient
         public string Username { get; protected set; }
         public uint TownPoints { get; set; }
         public uint MeritPoints { get; set; }
+        public bool OwnsCoven { get; protected set; }
         public IList<GameMode> ActiveGameModes { get; set; } = new List<GameMode>();
         public IList<Achievement> EarnedAchievements { get; set; } = new List<Achievement>();
         public IList<Character> OwnedCharacters { get; set; } = new List<Character>();
@@ -80,7 +81,7 @@ namespace ToSTextClient
             {
                 Console.OutputEncoding = Encoding.Unicode;
                 Console.Title = "Town of Salem (Unofficial Client)";
-                new TextClient().UI.Run();
+                new ConsoleUI().Run();
                 return;
             }
             catch (Exception e)
@@ -92,18 +93,10 @@ namespace ToSTextClient
             while (true) ;
         }
 
-        TextClient()
+        public TextClient(ConsoleUI ui, Socket socket, string authUsername, SecureString authPassword)
         {
-            UI = new ConsoleUI(this)
-            {
-                CommandContext = CommandContext.AUTHENTICATING
-            };
+            UI = ui;
             Localization = new Localization(UI);
-            UI.RegisterCommand(new Command("Open the login view", CommandContext.AUTHENTICATING.Any(), cmd =>
-            {
-                UI.SetMainView(UI.AuthView);
-                UI.SetInputContext(UI.AuthView);
-            }), "login", "auth", "authenticate");
             UI.RegisterCommand(new Command("Disconnect from the server", (CommandContext.HOME | CommandContext.GAME).Any(), cmd =>
             {
                 socket.Close();
@@ -236,24 +229,21 @@ namespace ToSTextClient
                 .Register(new Command<string>("Grant Coven to {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_COVEN, username)), "grantcoven")
                 .Register(new Command<string>("Grant Web Premium to {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_WEB_PREMIUM, username)), "grantwebpremium")
                 .Register(new Command<string>("Kick {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.KICK_USER, username)), "kickuser"), "system");
-        }
 
-        public void Authenticate(Socket socket, string username, SecureString password)
-        {
             RSA rsa = RSA.Create();
             rsa.ImportParameters(new RSAParameters
             {
                 Modulus = MODULUS,
                 Exponent = EXPONENT
             });
-            byte[] bytes = ToByteArray(password);
+            byte[] bytes = ToByteArray(authPassword);
             byte[] encpw = rsa.Encrypt(bytes, RSAEncryptionPadding.Pkcs1);
             Array.Clear(bytes, 0, bytes.Length);
 
             this.socket = socket;
             buffer = new byte[4096];
             Parser = new MessageParser(ParseMessage, (buffer, index, length) => socket.Send(buffer, index, length, SocketFlags.None));
-            Parser.Authenticate(AuthenticationMode.BMG_FORUMS, true, BUILD_NUMBER, username, Convert.ToBase64String(encpw));
+            Parser.Authenticate(AuthenticationMode.BMG_FORUMS, true, BUILD_NUMBER, authUsername, Convert.ToBase64String(encpw));
             UI.AuthView.Status = ("Authenticating...", ConsoleColor.Green, ConsoleColor.Black);
             QueueReceive();
         }
@@ -927,7 +917,11 @@ namespace ToSTextClient
                     }, out _);
                     UI.OpenSideView(UI.GameModeView);
                     break;
-                // Add missing cases here
+                case ServerMessageType.ACCOUNT_FLAGS:
+                    ServerMessageParsers.ACCOUNT_FLAGS.Build(buffer, index, length).Parse(out AccountFlags flags);
+                    OwnsCoven = flags.HasFlag(AccountFlags.OWNS_COVEN);
+                    UI.RedrawView(UI.GameModeView);
+                    break;
                 case ServerMessageType.ZOMBIE_ROTTED:
                     ServerMessageParsers.ZOMBIE_ROTTED.Build(buffer, index, length).Parse(out playerID);
                     UI.GameView.AppendLine(("You may no longer use {0}'s night ability", ConsoleColor.Green, ConsoleColor.Black), playerID);
@@ -1115,6 +1109,26 @@ namespace ToSTextClient
                 case GameMode.RANKED:
                 case GameMode.COVEN_RANKED:
                     return true;
+            }
+        }
+
+        public static bool RequiresCoven(this GameMode mode)
+        {
+            switch (mode)
+            {
+                default:
+                    return false;
+                case GameMode.COVEN_CUSTOM:
+                case GameMode.COVEN_CLASSIC:
+                case GameMode.COVEN_RANKED_PRACTICE:
+                case GameMode.COVEN_RANKED:
+                case GameMode.COVEN_ALL_ANY:
+                case GameMode.COVEN_VIP:
+                case GameMode.DEV_ROOM:
+                case GameMode.COVEN_LOVERS:
+                case GameMode.COVEN_RIVALS:
+                case GameMode.COVEN_MAFIA:
+                        return true;
             }
         }
 

@@ -65,9 +65,8 @@ namespace ToSTextClient
         protected HelpView helpView;
         protected CommandGroup helpCommand;
 
-        public ConsoleUI(TextClient game)
+        public ConsoleUI()
         {
-            this.Game = game;
             drawLock = new object();
             inputBuffer = new StringBuilder();
             inputHistory = new List<(bool cmdMode, string input)>();
@@ -75,18 +74,18 @@ namespace ToSTextClient
             commands = new Dictionary<string, Command>();
 
             ExceptionView = new ExceptionView(60, 10);
-            AuthView = new AuthView(this);
+            AuthView = new AuthView(this, game => Game = game);
             HomeView = new TextView(this, UpdateView, CommandContext.HOME.Any(), 60, 2);
-            GameModeView = new ListView<GameMode>(" # Game Modes", () => game.ActiveGameModes, gm => gm.ToString().ToDisplayName(), CommandContext.HOME.Any(), 25);
+            GameModeView = new ListView<GameMode>(" # Game Modes", () => Game.ActiveGameModes.Where(gm => Game.OwnsCoven || !gm.RequiresCoven()).ToList(), gm => gm.ToString().ToDisplayName(), CommandContext.HOME.Any(), 25);
             GameView = new TextView(this, UpdateView, (CommandContext.LOBBY | CommandContext.GAME).Any(), 60, 20);
-            PlayerListView = new ListView<PlayerState>(" # Players", () => game.GameState.Players, p => p.Dead ? "" : game.GameState.ToName(p.Self, true), (CommandContext.LOBBY | CommandContext.GAME).Any(), 25);
-            RoleListView = new ListView<Role>(" # Role List", () => game.GameState.Roles, r => r.ToString().ToDisplayName(), (CommandContext.LOBBY | CommandContext.GAME).Any(), 25);
-            GraveyardView = new ListView<PlayerState>(" # Graveyard", () => game.GameState.Graveyard, ps => game.GameState.ToName(ps, true), CommandContext.GAME.Any(), 40);
-            TeamView = new ListView<PlayerState>(" # Team", () => game.GameState.Team, ps => !ps.Dead || ps.Role == Role.DISGUISER ? game.GameState.ToName(ps, true) : "", CommandContext.GAME.Any(), 40);
+            PlayerListView = new ListView<PlayerState>(" # Players", () => Game.GameState.Players, p => p.Dead ? "" : Game.GameState.ToName(p.Self, true), (CommandContext.LOBBY | CommandContext.GAME).Any(), 25);
+            RoleListView = new ListView<Role>(" # Role List", () => Game.GameState.Roles, r => r.ToString().ToDisplayName(), (CommandContext.LOBBY | CommandContext.GAME).Any(), 25);
+            GraveyardView = new ListView<PlayerState>(" # Graveyard", () => Game.GameState.Graveyard, ps => Game.GameState.ToName(ps, true), CommandContext.GAME.Any(), 40);
+            TeamView = new ListView<PlayerState>(" # Team", () => Game.GameState.Team, ps => !ps.Dead || ps.Role == Role.DISGUISER ? Game.GameState.ToName(ps, true) : "", CommandContext.GAME.Any(), 40);
             LastWillView = new WillView();
-            myLastWillView = new EditableWillView(" # My Last Will", lw => game.GameState.LastWill = lw);
-            myDeathNoteView = new EditableWillView(" # My Death Note", dn => game.GameState.DeathNote = dn);
-            myForgedWillView = new EditableWillView(" # My Forged Will", fw => game.GameState.ForgedWill = fw);
+            myLastWillView = new EditableWillView(" # My Last Will", lw => Game.GameState.LastWill = lw);
+            myDeathNoteView = new EditableWillView(" # My Death Note", dn => Game.GameState.DeathNote = dn);
+            myForgedWillView = new EditableWillView(" # My Forged Will", fw => Game.GameState.ForgedWill = fw);
             helpView = new HelpView(commands, () => _CommandContext, () => OpenSideView(helpView), 40, 1);
 
             mainView = (AbstractView)AuthView;
@@ -105,6 +104,11 @@ namespace ToSTextClient
             inputContext = AuthView;
 
             RegisterCommand(helpCommand = new CommandGroup("View a list of available commands", this, "Topic", "Topics", cmd => helpView.Topic = null, activeContext => true), "help", "?");
+            RegisterCommand(new Command("Open the login view", CommandContext.AUTHENTICATING.Any(), cmd =>
+            {
+                SetMainView(AuthView);
+                SetInputContext(AuthView);
+            }), "login", "auth", "authenticate");
             RegisterCommand(new CommandGroup("Open the {0} view", this, "View", "Views")
                 .Register(new Command("Open the help view", helpView.IsAllowed, cmd => OpenSideView(helpView)), "help")
                 .Register(new Command("Open the game modes view", GameModeView.IsAllowed, cmd => OpenSideView(GameModeView)), "modes")
@@ -126,14 +130,14 @@ namespace ToSTextClient
             {
                 opTarget.Match(target =>
                 {
-                    PlayerState ps = game.GameState.Players[(int)target];
+                    PlayerState ps = Game.GameState.Players[(int)target];
                     if (ps.Dead)
                     {
-                        LastWillView.Title = string.Format(" # (LW) {0}", game.GameState.ToName(target));
+                        LastWillView.Title = string.Format(" # (LW) {0}", Game.GameState.ToName(target));
                         LastWillView.Value = ps.LastWill;
                         OpenSideView(LastWillView);
                     }
-                    else StatusLine = string.Format("{0} isn't dead, so you can't see their last will", game.GameState.ToName(target));
+                    else StatusLine = string.Format("{0} isn't dead, so you can't see their last will", Game.GameState.ToName(target));
                 }, () =>
                 {
                     OpenSideView(myLastWillView);
@@ -145,14 +149,14 @@ namespace ToSTextClient
             {
                 opTarget.Match(target =>
                 {
-                    PlayerState ps = game.GameState.Players[(int)target];
+                    PlayerState ps = Game.GameState.Players[(int)target];
                     if (ps.Dead)
                     {
-                        LastWillView.Title = string.Format(" # (DN) {0}", game.GameState.ToName(target));
+                        LastWillView.Title = string.Format(" # (DN) {0}", Game.GameState.ToName(target));
                         LastWillView.Value = ps.LastWill;
                         OpenSideView(LastWillView);
                     }
-                    else StatusLine = string.Format("{0} isn't dead, so you can't see their killer's death note", game.GameState.ToName(target));
+                    else StatusLine = string.Format("{0} isn't dead, so you can't see their killer's death note", Game.GameState.ToName(target));
                 }, () =>
                 {
                     OpenSideView(myLastWillView);
@@ -166,7 +170,7 @@ namespace ToSTextClient
                 inputContext = myForgedWillView;
                 RedrawCursor();
             }), "fw", "forgedwill");
-            RegisterCommand(new Command("Say your will in chat", CommandContext.GAME.Any(), cmd => game.Parser.SendChatBoxMessage(game.GameState.LastWill)), "slw", "saylw", "saylastwill");
+            RegisterCommand(new Command("Say your will in chat", CommandContext.GAME.Any(), cmd => Game.Parser.SendChatBoxMessage(Game.GameState.LastWill)), "slw", "saylw", "saylastwill");
         }
 
         public void Run()
@@ -1304,6 +1308,7 @@ namespace ToSTextClient
         }
 
         protected ConsoleUI ui;
+        protected Action<TextClient> setGame;
         protected Host selectedHost;
         protected StringBuilder username;
         protected int usernameCursor;
@@ -1312,9 +1317,10 @@ namespace ToSTextClient
         protected int lineIndex;
         protected FormattedString _Status;
 
-        public AuthView(ConsoleUI ui) : base(CommandContext.AUTHENTICATING.Any(), 30, 3)
+        public AuthView(ConsoleUI ui, Action<TextClient> setGame) : base(CommandContext.AUTHENTICATING.Any(), 30, 3)
         {
             this.ui = ui;
+            this.setGame = setGame;
             username = new StringBuilder(20);
             password = new SecureString();
             lineIndex = 1;
@@ -1335,7 +1341,7 @@ namespace ToSTextClient
                 {
                     Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
                     socket.Connect(GetHost(selectedHost), 3600);
-                    ui.Game.Authenticate(socket, username.ToString(), password);
+                    setGame(new TextClient(ui, socket, username.ToString(), password));
                     Close();
                 }
                 catch (SocketException)
