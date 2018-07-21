@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Net.Sockets;
+using System.Security;
 using System.Text;
 using ToSParser;
 
@@ -12,9 +14,8 @@ namespace ToSTextClient
     {
         protected const string DEFAULT_STATUS = "Type /? for help";
         protected const string DEFAULT_COMMAND_STATUS = "Type ? for help";
-        protected const string EDITING_STATUS = "Editing, press ESC to save & close";
+        protected const string EDITING_STATUS = "Editing, press ESC to close";
 
-        protected TextClient game;
         protected readonly object drawLock;
 
         protected AbstractView mainView;
@@ -31,14 +32,17 @@ namespace ToSTextClient
         protected int bufferIndex;
         protected bool commandMode;
         protected string _StatusLine;
-        protected EditableWillView willContext;
+        protected IInputView inputContext;
         protected CommandContext _CommandContext;
         protected Dictionary<string, Command> commands;
         protected volatile bool _RunInput = true;
         protected List<(bool cmdMode, string input)> inputHistory;
         protected int historyIndex;
 
-        public GameState GameState { get => game.GameState; }
+        public TextClient Game { get; protected set; }
+        public GameState GameState { get => Game.GameState; }
+        public IExceptionView ExceptionView { get; protected set; }
+        public IAuthView AuthView { get; protected set; }
         public ITextView HomeView { get; protected set; }
         public IListView<GameMode> GameModeView { get; protected set; }
         public ITextView GameView { get; protected set; }
@@ -54,7 +58,7 @@ namespace ToSTextClient
         }
         public CommandContext CommandContext { get => _CommandContext; set { _CommandContext = value; UpdateCommandMode(); RedrawView(helpView); } }
         public bool RunInput { get => _RunInput; set => _RunInput = value; }
-
+        
         protected EditableWillView myLastWillView;
         protected EditableWillView myDeathNoteView;
         protected EditableWillView myForgedWillView;
@@ -63,13 +67,15 @@ namespace ToSTextClient
 
         public ConsoleUI(TextClient game)
         {
-            this.game = game;
+            this.Game = game;
             drawLock = new object();
             inputBuffer = new StringBuilder();
             inputHistory = new List<(bool cmdMode, string input)>();
             commandMode = true;
             commands = new Dictionary<string, Command>();
 
+            ExceptionView = new ExceptionView(60, 10);
+            AuthView = new AuthView(this);
             HomeView = new TextView(this, UpdateView, 60, 2);
             GameModeView = new ListView<GameMode>(" # Game Modes", () => game.ActiveGameModes, gm => gm.ToString().ToDisplayName(), 25);
             GameView = new TextView(this, UpdateView, 60, 20);
@@ -83,17 +89,21 @@ namespace ToSTextClient
             myForgedWillView = new EditableWillView(" # My Forged Will", fw => game.GameState.ForgedWill = fw);
             helpView = new HelpView(commands, () => _CommandContext, () => OpenSideView(helpView), 40, 1);
 
-            mainView = (AbstractView)HomeView;
+            mainView = (AbstractView)AuthView;
             sideViews = new List<AbstractView>();
-            sideViews.Insert(0, (AbstractView)GameModeView);
+            List<AbstractView> homeSideViews = new List<AbstractView>();
             List<AbstractView> gameSideViews = new List<AbstractView>();
             gameSideViews.Insert(0, (AbstractView)RoleListView);
             gameSideViews.Insert(0, (AbstractView)GraveyardView);
             gameSideViews.Insert(0, (AbstractView)PlayerListView);
-            hiddenSideViews = new Dictionary<AbstractView, List<AbstractView>>();
-            hiddenSideViews.Add(mainView, sideViews);
-            hiddenSideViews.Add((AbstractView)GameView, gameSideViews);
-            
+            hiddenSideViews = new Dictionary<AbstractView, List<AbstractView>>
+            {
+                { mainView, sideViews },
+                { (AbstractView)HomeView, homeSideViews },
+                { (AbstractView)GameView, gameSideViews }
+            };
+            inputContext = AuthView;
+
             RegisterCommand(helpCommand = new CommandGroup("View a list of available commands", this, "Topic", "Topics", cmd => helpView.Topic = null, ~CommandContext.NONE), "help", "?");
             RegisterCommand(new CommandGroup("Open the {0} view", this, "View", "Views")
                 .Register(new Command("Open the help view", ~CommandContext.NONE, cmd => OpenSideView(helpView)), "help")
@@ -127,7 +137,7 @@ namespace ToSTextClient
                 }, () =>
                 {
                     OpenSideView(myLastWillView);
-                    willContext = myLastWillView;
+                    inputContext = myLastWillView;
                     RedrawCursor();
                 });
             }), "lw", "lastwill");
@@ -146,14 +156,14 @@ namespace ToSTextClient
                 }, () =>
                 {
                     OpenSideView(myLastWillView);
-                    willContext = myLastWillView;
+                    inputContext = myLastWillView;
                     RedrawCursor();
                 });
             }), "dn", "deathnote");
             RegisterCommand(new Command("Edit your forged will", CommandContext.GAME, cmd =>
             {
                 OpenSideView(myForgedWillView);
-                willContext = myForgedWillView;
+                inputContext = myForgedWillView;
                 RedrawCursor();
             }), "fw", "forgedwill");
             RegisterCommand(new Command("Say your will in chat", CommandContext.GAME, cmd => game.Parser.SendChatBoxMessage(game.GameState.LastWill)), "slw", "saylw", "saylastwill");
@@ -196,7 +206,7 @@ namespace ToSTextClient
                             StatusLine = string.Format("Failed to parse command: {0}", e.Message);
                         }
                     }
-                    else game.Parser.SendChatBoxMessage(input);
+                    else Game.Parser.SendChatBoxMessage(input);
                 }
                 catch (Exception e)
                 {
@@ -220,18 +230,31 @@ namespace ToSTextClient
             else CommandContext &= ~context;
         }
 
+        public void SetInputContext(IInputView inputView)
+        {
+            lock (drawLock)
+            {
+                inputContext?.Close();
+                inputContext = inputView;
+            }
+        }
+
         public void SetMainView(IView iview)
         {
             if (!(iview is AbstractView view)) throw new ArgumentException("attempt to set incompatible view as main view");
             lock (drawLock)
             {
-                if (mainView == view) return;
-                willContext = null;
+                if (mainView == view)
+                {
+                    RedrawMainView();
+                    return;
+                }
+                SetInputContext(null);
                 mainView = view;
                 sideViews = hiddenSideViews.SafeIndex(view, () => new List<AbstractView>());
                 inputHistory.Clear();
-                game.Timer = 0;
-                game.TimerText = null;
+                Game.Timer = 0;
+                Game.TimerText = null;
                 RedrawAll();
             }
         }
@@ -263,7 +286,7 @@ namespace ToSTextClient
             {
                 Console.CursorTop = fullHeight - 1;
                 Console.CursorLeft = mainWidth + 1;
-                Console.Write((game.TimerText != null ? string.Format("{0}: {1}", game.TimerText, game.Timer) : "").PadRightHard(sideWidth));
+                Console.Write((Game.TimerText != null ? string.Format("{0}: {1}", Game.TimerText, Game.Timer) : "").PadRightHard(sideWidth));
                 ResetCursor();
             }
         }
@@ -369,8 +392,8 @@ namespace ToSTextClient
                 Console.CursorLeft = 0;
                 Console.ForegroundColor = ConsoleColor.White;
                 Console.Write(commandMode ? "/ " : "> ");
-                if (willContext != null || inputBuffer.Length == 0) Console.ForegroundColor = ConsoleColor.Gray;
-                Console.Write((willContext != null ? EDITING_STATUS : inputBuffer.Length == 0 ? _StatusLine ?? (commandMode ? DEFAULT_COMMAND_STATUS : DEFAULT_STATUS) : inputBuffer.ToString()).PadRightHard(mainWidth - 2));
+                if (inputContext != null || inputBuffer.Length == 0) Console.ForegroundColor = ConsoleColor.Gray;
+                Console.Write((inputContext != null ? EDITING_STATUS : inputBuffer.Length == 0 ? _StatusLine ?? (commandMode ? DEFAULT_COMMAND_STATUS : DEFAULT_STATUS) : inputBuffer.ToString()).PadRightHard(mainWidth - 2));
                 Console.ResetColor();
                 ResetCursor();
             }
@@ -436,9 +459,9 @@ namespace ToSTextClient
 
         protected void ResetCursor()
         {
-            if (willContext != null)
+            if (inputContext != null)
             {
-                willContext.MoveCursor();
+                inputContext.MoveCursor();
                 return;
             }
             Console.CursorTop = fullHeight - 1;
@@ -479,10 +502,10 @@ namespace ToSTextClient
                         default:
                             if (!char.IsControl(key.KeyChar))
                             {
-                                if (willContext != null)
+                                if (inputContext != null)
                                 {
-                                    willContext.Value.Insert(willContext.CursorIndex++, key.KeyChar);
-                                    RedrawView(willContext);
+                                    inputContext.Insert(key.KeyChar);
+                                    RedrawView(inputContext);
                                     break;
                                 }
                                 if (Console.CursorLeft + 1 >= mainWidth) break;
@@ -501,11 +524,10 @@ namespace ToSTextClient
                             }
                             break;
                         case ConsoleKey.Backspace:
-                            if (willContext != null)
+                            if (inputContext != null)
                             {
-                                if (willContext.CursorIndex == 0) break;
-                                willContext.Value.Remove(--willContext.CursorIndex, 1);
-                                RedrawView(willContext);
+                                inputContext.Backspace();
+                                RedrawView(inputContext);
                                 break;
                             }
                             if (bufferIndex > 0)
@@ -525,19 +547,19 @@ namespace ToSTextClient
                             }
                             break;
                         case ConsoleKey.Enter:
-                            if (willContext != null)
+                            if (inputContext != null)
                             {
-                                willContext.Value.Insert(willContext.CursorIndex++, '\r');
-                                RedrawView(willContext);
+                                inputContext.Enter();
+                                RedrawView(inputContext);
                                 break;
                             }
                             break;
                         case ConsoleKey.Escape:
-                            if (willContext != null)
+                            if (inputContext != null)
                             {
-                                willContext.Save();
-                                CloseSideView(willContext);
-                                willContext = null;
+                                inputContext.Close();
+                                CloseSideView(inputContext);
+                                inputContext = null;
                                 RedrawCursor();
                                 break;
                             }
@@ -553,9 +575,9 @@ namespace ToSTextClient
                             ScrollMainView(1);
                             break;
                         case ConsoleKey.End:
-                            if (willContext != null)
+                            if (inputContext != null)
                             {
-                                willContext.MoveCursorEnd();
+                                inputContext.End();
                                 ResetCursor();
                                 break;
                             }
@@ -563,9 +585,9 @@ namespace ToSTextClient
                             Console.CursorLeft = bufferIndex + 2;
                             break;
                         case ConsoleKey.Home:
-                            if (willContext != null)
+                            if (inputContext != null)
                             {
-                                willContext.MoveCursorHome();
+                                inputContext.Home();
                                 ResetCursor();
                                 break;
                             }
@@ -573,11 +595,10 @@ namespace ToSTextClient
                             Console.CursorLeft = 2;
                             break;
                         case ConsoleKey.LeftArrow:
-                            if (willContext != null)
+                            if (inputContext != null)
                             {
-                                if (willContext.CursorIndex <= 0) break;
-                                willContext.CursorIndex--;
-                                ResetCursor();
+                                inputContext.LeftArrow();
+                                RedrawView(inputContext);
                                 break;
                             }
                             if (bufferIndex > 0)
@@ -587,9 +608,9 @@ namespace ToSTextClient
                             }
                             break;
                         case ConsoleKey.UpArrow:
-                            if (willContext != null)
+                            if (inputContext != null)
                             {
-                                willContext.MoveCursorUp();
+                                inputContext.UpArrow();
                                 ResetCursor();
                                 break;
                             }
@@ -604,11 +625,10 @@ namespace ToSTextClient
                             }
                             break;
                         case ConsoleKey.RightArrow:
-                            if (willContext != null)
+                            if (inputContext != null)
                             {
-                                if (willContext.CursorIndex >= willContext.Value.Length) break;
-                                willContext.CursorIndex++;
-                                ResetCursor();
+                                inputContext.RightArrow();
+                                RedrawView(inputContext);
                                 break;
                             }
                             if (bufferIndex < inputBuffer.Length)
@@ -618,9 +638,9 @@ namespace ToSTextClient
                             }
                             break;
                         case ConsoleKey.DownArrow:
-                            if (willContext != null)
+                            if (inputContext != null)
                             {
-                                willContext.MoveCursorDown();
+                                inputContext.DownArrow();
                                 ResetCursor();
                                 break;
                             }
@@ -642,11 +662,10 @@ namespace ToSTextClient
                             }
                             break;
                         case ConsoleKey.Delete:
-                            if (willContext != null)
+                            if (inputContext != null)
                             {
-                                if (willContext.CursorIndex == 0) break;
-                                willContext.Value.Remove(willContext.CursorIndex, 1);
-                                RedrawView(willContext);
+                                inputContext.Delete();
+                                RedrawView(inputContext);
                                 break;
                             }
                             if (bufferIndex < inputBuffer.Length)
@@ -658,7 +677,7 @@ namespace ToSTextClient
                     }
                 }
             }
-            while (key.Key != ConsoleKey.Enter || willContext != null);
+            while (key.Key != ConsoleKey.Enter || inputContext != null);
             string result = inputBuffer.ToString();
             inputHistory.Add((commandMode, result));
             historyIndex = inputHistory.Count;
@@ -982,11 +1001,11 @@ namespace ToSTextClient
             }
         }
     }
-    class EditableWillView : AbstractView
+    class EditableWillView : AbstractView, IInputView
     {
         public string Title { get; protected set; }
-        public StringBuilder Value { get; set; } = new StringBuilder();
-        public int CursorIndex { get; set; }
+        protected StringBuilder Value { get; set; } = new StringBuilder();
+        protected int CursorIndex { get; set; }
 
         protected Action<string> save;
         protected int cursorX;
@@ -1025,7 +1044,31 @@ namespace ToSTextClient
             }
         }
 
-        public void MoveCursorDown()
+        public void Insert(char value) => Value.Insert(CursorIndex++, value);
+
+        public void Enter() => Insert('\r');
+
+        public void Backspace()
+        {
+            if (CursorIndex <= 0) return;
+            Value.Remove(--CursorIndex, 1);
+        }
+
+        public void Delete() => Value.Remove(CursorIndex, 1);
+
+        public void LeftArrow()
+        {
+            if (CursorIndex <= 0) return;
+            CursorIndex--;
+        }
+        
+        public void RightArrow()
+        {
+            if (CursorIndex >= Value.Length) return;
+            CursorIndex++;
+        }
+
+        public void DownArrow()
         {
             cursorY++;
             int willIndex = 0;
@@ -1050,7 +1093,7 @@ namespace ToSTextClient
             cursorY--;
         }
 
-        public void MoveCursorUp()
+        public void UpArrow()
         {
             if (cursorY == 0) return;
             cursorY--;
@@ -1075,7 +1118,7 @@ namespace ToSTextClient
             }
         }
 
-        public void MoveCursorHome()
+        public void Home()
         {
             cursorX = 0;
             int willIndex = 0;
@@ -1099,7 +1142,7 @@ namespace ToSTextClient
             }
         }
 
-        public void MoveCursorEnd()
+        public void End()
         {
             int willIndex = 0;
             int lineIndex = 0;
@@ -1128,7 +1171,7 @@ namespace ToSTextClient
             }
         }
 
-        public void Save() => save(Value.ToString());
+        public void Close() => save(Value.ToString());
 
         public void Clear()
         {
@@ -1246,6 +1289,247 @@ namespace ToSTextClient
                         Console.CursorTop++;
                         Console.CursorLeft = cursorOffset;
                     }
+                }
+            }
+            return lineIndex;
+        }
+    }
+
+    class AuthView : AbstractView, IAuthView
+    {
+        public FormattedString Status
+        {
+            get => _Status;
+            set { _Status = value; ui.RedrawView(this); }
+        }
+
+        protected ConsoleUI ui;
+        protected Host selectedHost;
+        protected StringBuilder username;
+        protected int usernameCursor;
+        protected SecureString password;
+        protected int passwordCursor;
+        protected int lineIndex;
+        protected FormattedString _Status;
+
+        public AuthView(ConsoleUI ui) : base(30, 3)
+        {
+            this.ui = ui;
+            username = new StringBuilder(20);
+            password = new SecureString();
+            lineIndex = 1;
+        }
+
+        public void Insert(char c)
+        {
+            if (lineIndex == 1 && username.Length < 20 && c != ' ') username.Insert(usernameCursor++, c);
+            else if (lineIndex == 2) password.InsertAt(passwordCursor++, c);
+        }
+
+        public void Enter()
+        {
+            if (lineIndex < 2) DownArrow();
+            else
+            {
+                try
+                {
+                    Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                    socket.Connect(GetHost(selectedHost), 3600);
+                    ui.Game.Authenticate(socket, username.ToString(), password);
+                    Close();
+                }
+                catch (SocketException)
+                {
+                    Status = ("Failed to connect to the server: check your internet connection", ConsoleColor.DarkRed);
+                    Close();
+                }
+                catch (Exception e)
+                {
+                    ui.ExceptionView.Exception = e;
+                    ui.SetMainView(ui.ExceptionView);
+                    ui.StatusLine = "Exception occurred during authentication";
+                }
+            }
+        }
+
+        public void Backspace()
+        {
+            if (lineIndex == 1 && usernameCursor > 0) username.Remove(--usernameCursor, 1);
+            else if (lineIndex == 2 && passwordCursor > 0) password.RemoveAt(--passwordCursor);
+        }
+
+        public void Delete()
+        {
+            if (lineIndex == 1 && usernameCursor < username.Length) username.Remove(usernameCursor, 1);
+            else if (lineIndex == 2 && passwordCursor < password.Length) password.RemoveAt(passwordCursor);
+        }
+
+        public void Home()
+        {
+            if (lineIndex == 1) usernameCursor = 0;
+            else if (lineIndex == 2) passwordCursor = 0;
+        }
+
+        public void End()
+        {
+            if (lineIndex == 1) usernameCursor = username.Length;
+            else if (lineIndex == 2) passwordCursor = password.Length;
+        }
+
+        public void LeftArrow()
+        {
+            if (lineIndex == 0 && selectedHost > 0) selectedHost--;
+            else if (lineIndex == 1 && usernameCursor > 0) usernameCursor--;
+            else if (lineIndex == 2 && passwordCursor > 0) passwordCursor--;
+        }
+
+        public void RightArrow()
+        {
+            if (lineIndex == 0 && selectedHost < Host.Local) selectedHost++;
+            else if (lineIndex == 1 && usernameCursor < username.Length) usernameCursor++;
+            else if (lineIndex == 2 && passwordCursor < password.Length) passwordCursor++;
+        }
+
+        public void UpArrow()
+        {
+            if (lineIndex > 0) lineIndex--;
+        }
+
+        public void DownArrow()
+        {
+            if (lineIndex < 2) lineIndex++;
+        }
+
+        public void MoveCursor()
+        {
+            Console.CursorTop = lastDrawnTop + lineIndex;
+            Console.CursorLeft = lineIndex == 1 ? usernameCursor + 10 : lineIndex == 2 && password.Length == 0 ? 10 : 18;
+        }
+
+        public void Close()
+        {
+            lineIndex = 1;
+            selectedHost = Host.Live;
+            username.Clear();
+            usernameCursor = 0;
+            password.Clear();
+            passwordCursor = 0;
+        }
+
+        public override int GetFullHeight()
+        {
+            return 3;
+        }
+
+        protected override int DrawUnsafe(int width, int height, int startLine = 0)
+        {
+            int cursorOffset = Console.CursorLeft;
+            int lineIndex = 0, currentLine = 0;
+            if (++currentLine > startLine)
+            {
+                if (lineIndex++ >= height) return lineIndex;
+                switch (selectedHost)
+                {
+                    case Host.Live:
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write(Host.Live);
+                        Console.ResetColor();
+                        Console.Write(" / ");
+                        Console.Write(Host.PTR);
+                        Console.Write(" / ");
+                        Console.Write(Host.Local);
+                        break;
+                    case Host.PTR:
+                        Console.Write(Host.Live);
+                        Console.Write(" / ");
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write(Host.PTR);
+                        Console.ResetColor();
+                        Console.Write(" / ");
+                        Console.Write(Host.Local);
+                        break;
+                    case Host.Local:
+                        Console.Write(Host.Live);
+                        Console.Write(" / ");
+                        Console.Write(Host.PTR);
+                        Console.Write(" / ");
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write(Host.Local);
+                        Console.ResetColor();
+                        break;
+                }
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
+            if (++currentLine > startLine)
+            {
+                if (lineIndex++ >= height) return lineIndex;
+                Console.Write("Username: ");
+                Console.Write(username.ToString().PadRightHard(width - 10));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
+            if (++currentLine > startLine)
+            {
+                if (lineIndex++ >= height) return lineIndex;
+                Console.Write("Password: ");
+                Console.Write((password.Length > 0 ? "(hidden)" : "").PadRightHard(width - 10));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
+            if (++currentLine > startLine)
+            {
+                if (lineIndex++ >= height) return lineIndex;
+                Console.ForegroundColor = _Status.Foreground;
+                Console.BackgroundColor = _Status.Background;
+                Console.Write((_Status.Value ?? "").PadRightHard(width));
+                Console.ResetColor();
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
+            return lineIndex;
+        }
+
+        protected string GetHost(Host host)
+        {
+            switch (host)
+            {
+                case Host.Live:
+                    return "live4.tos.blankmediagames.com";
+                case Host.PTR:
+                    return "ptr.tos.blankmediagames.com";
+                case Host.Local:
+                    return "localhost";
+            }
+            throw new ArgumentOutOfRangeException("unknown host value " + host);
+        }
+
+        protected enum Host
+        {
+            Live, PTR, Local
+        }
+    }
+
+    class ExceptionView : AbstractView, IExceptionView
+    {
+        public Exception Exception { get; set; }
+
+        public ExceptionView(int minimumWidth, int minimumHeight) : base(minimumWidth, minimumHeight) { }
+
+        public override int GetFullHeight() => (Exception?.ToString()?.Where(c => c == '\r')?.Count() ?? -1) + 1;
+
+        protected override int DrawUnsafe(int width, int height, int startLine = 0)
+        {
+            int cursorOffset = Console.CursorLeft;
+            int lineIndex = 0, currentLine = 0;
+            foreach (string line in Exception?.ToString()?.Split('\r') ?? Enumerable.Empty<string>())
+            {
+                if (++currentLine > startLine)
+                {
+                    if (lineIndex++ >= height) return lineIndex;
+                    Console.Write(line);
+                    Console.CursorTop++;
+                    Console.CursorLeft = cursorOffset;
                 }
             }
             return lineIndex;

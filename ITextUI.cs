@@ -6,6 +6,8 @@ namespace ToSTextClient
     interface ITextUI
     {
         GameState GameState { get; }
+        IExceptionView ExceptionView { get; }
+        IAuthView AuthView { get; }
         ITextView HomeView { get; }
         IListView<GameMode> GameModeView { get; }
         ITextView GameView { get; }
@@ -27,7 +29,9 @@ namespace ToSTextClient
         void RedrawSideViews();
         void RegisterCommand(Command command, params string[] names);
         void SetCommandContext(CommandContext context, bool value);
+        void SetInputContext(IInputView view);
         void AudioAlert();
+        void Run();
     }
 
     interface IView { }
@@ -47,6 +51,32 @@ namespace ToSTextClient
     {
         string Title { get; set; }
         string Value { get; set; }
+    }
+
+    interface IExceptionView : IView
+    {
+        Exception Exception { get; set; }
+    }
+
+    interface IInputView : IView
+    {
+        void Insert(char c);
+        void Enter();
+        void Backspace();
+        void Delete();
+        void LeftArrow();
+        void RightArrow();
+        void Home();
+        void End();
+        void UpArrow();
+        void DownArrow();
+        void MoveCursor();
+        void Close();
+    }
+
+    interface IAuthView : IInputView
+    {
+        FormattedString Status { get; set; }
     }
 
     struct FormattedString

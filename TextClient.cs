@@ -78,32 +78,8 @@ namespace ToSTextClient
             {
                 Console.OutputEncoding = Encoding.Unicode;
                 Console.Title = "Town of Salem (Unofficial Client)";
-                Console.WriteLine("Build {0}", BUILD_NUMBER);
-                Console.Write("Username: ");
-                string user = Console.ReadLine();
-                Console.Write("Password: ");
-                SecureString pwrd = ReadPassword();
-                Console.WriteLine("(hidden)", pwrd.Length);
-                RSA rsa = RSA.Create();
-                rsa.ImportParameters(new RSAParameters
-                {
-                    Modulus = MODULUS,
-                    Exponent = EXPONENT
-                });
-                byte[] pwrdb = ToByteArray(pwrd);
-                byte[] encpw = rsa.Encrypt(pwrdb, RSAEncryptionPadding.Pkcs1);
-                Array.Clear(pwrdb, 0, pwrdb.Length);
-
-                Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-                Console.WriteLine("Connecting to server");
-                socket.Connect("live4.tos.blankmediagames.com", 3600);
-                ((ConsoleUI)new TextClient(socket, user, Convert.ToBase64String(encpw)).UI).Run();
+                new TextClient().UI.Run();
                 return;
-            }
-            catch (SocketException)
-            {
-                Console.Clear();
-                Console.WriteLine("Failed to connect to the server: check your internet connection");
             }
             catch (Exception e)
             {
@@ -114,17 +90,25 @@ namespace ToSTextClient
             while (true) ;
         }
 
-        TextClient(Socket socket, string user, string encpw)
+        TextClient()
         {
-            this.socket = socket;
-            buffer = new byte[4096];
-            Parser = new MessageParser(ParseMessage, (buffer, index, length) => socket.Send(buffer, index, length, SocketFlags.None));
-            Parser.Authenticate(AuthenticationMode.BMG_FORUMS, true, BUILD_NUMBER, user, encpw);
             UI = new ConsoleUI(this)
             {
                 CommandContext = CommandContext.AUTHENTICATING
             };
             Localization = new Localization(UI);
+            UI.RegisterCommand(new Command("Open the login view", CommandContext.AUTHENTICATING, cmd =>
+            {
+                UI.SetMainView(UI.AuthView);
+                UI.SetInputContext(UI.AuthView);
+            }), "login", "auth", "authenticate");
+            UI.RegisterCommand(new Command("Disconnect from the server", CommandContext.HOME | CommandContext.GAME, cmd =>
+            {
+                socket.Close();
+                UI.CommandContext = CommandContext.AUTHENTICATING;
+                UI.SetMainView(UI.AuthView);
+                UI.SetInputContext(UI.AuthView);
+            }), "dc", "logout", "logoff", "disconnect");
             UI.RegisterCommand(new Command<GameMode>("Join a lobby for {0}", CommandContext.HOME, ArgumentParsers.ForEnum<GameMode>(UI), (cmd, gameMode) =>
             {
                 if (ActiveGameModes.Contains(gameMode))
@@ -249,8 +233,25 @@ namespace ToSTextClient
                 .Register(new Command<string>("Grant Coven to {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_COVEN, username)), "grantcoven")
                 .Register(new Command<string>("Grant Web Premium to {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_WEB_PREMIUM, username)), "grantwebpremium")
                 .Register(new Command<string>("Kick {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.KICK_USER, username)), "kickuser"), "system");
-            UI.HomeView.ReplaceLine(0, "Authenticating...");
-            UI.RedrawView(UI.HomeView);
+        }
+
+        public void Authenticate(Socket socket, string username, SecureString password)
+        {
+            RSA rsa = RSA.Create();
+            rsa.ImportParameters(new RSAParameters
+            {
+                Modulus = MODULUS,
+                Exponent = EXPONENT
+            });
+            byte[] bytes = ToByteArray(password);
+            byte[] encpw = rsa.Encrypt(bytes, RSAEncryptionPadding.Pkcs1);
+            Array.Clear(bytes, 0, bytes.Length);
+
+            this.socket = socket;
+            buffer = new byte[4096];
+            Parser = new MessageParser(ParseMessage, (buffer, index, length) => socket.Send(buffer, index, length, SocketFlags.None));
+            Parser.Authenticate(AuthenticationMode.BMG_FORUMS, true, BUILD_NUMBER, username, Convert.ToBase64String(encpw));
+            UI.AuthView.Status = ("Authenticating...", ConsoleColor.Green, ConsoleColor.Black);
             QueueReceive();
         }
 
@@ -262,10 +263,12 @@ namespace ToSTextClient
                     ServerMessageParsers.AUTHENTICATED.Build(buffer, index, length).Parse(out bool registered);
                     if (registered)
                     {
+                        UI.AuthView.Status = null;
+                        UI.SetMainView(UI.HomeView);
                         UI.CommandContext = (UI.CommandContext & ~CommandContext.AUTHENTICATING) | CommandContext.HOME;
                         UI.HomeView.ReplaceLine(0, ("Authenticated. Loading user information...", ConsoleColor.DarkGreen));
                     }
-                    else UI.HomeView.ReplaceLine(0, ("Authentication failed: registration required", ConsoleColor.DarkRed));
+                    else UI.AuthView.Status = ("Authentication failed: registration required", ConsoleColor.DarkRed);
                     break;
                 case ServerMessageType.CREATE_LOBBY:
                     ServerMessageParsers.CREATE_LOBBY.Build(buffer, index, length).Parse(out bool host).Parse(out GameMode gameMode);
@@ -773,7 +776,7 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.AUTHENTICATION_FAILED:
                     ServerMessageParsers.AUTHENTICATION_FAILED.Build(buffer, index, length).Parse(out AuthenticationResult authResult);
-                    UI.HomeView.ReplaceLine(0, ("Authentication failed: {0}", ConsoleColor.DarkRed), authResult);
+                    UI.AuthView.Status = ((FormattedString)("Authentication failed: {0}", ConsoleColor.DarkRed)).Format(authResult.ToString().ToDisplayName());
                     break;
                 case ServerMessageType.SPY_NIGHT_ABILITY_MESSAGE:
                     ServerMessageParsers.SPY_NIGHT_ABILITY_MESSAGE.Build(buffer, index, length).Parse(out bool isCoven).Parse(out playerID);
@@ -921,7 +924,7 @@ namespace ToSTextClient
                         ActiveGameModes.Add(id);
                         return root;
                     }, out _);
-                    UI.RedrawView(UI.GameModeView);
+                    UI.OpenSideView(UI.GameModeView);
                     break;
                 // Add missing cases here
                 case ServerMessageType.ZOMBIE_ROTTED:
@@ -947,7 +950,7 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.DISCONNECTED:
                     ServerMessageParsers.DISCONNECTED.Build(buffer, index, length).Parse(out DisconnectReason dcReason);
-                    UI.HomeView.ReplaceLine(0, ("Disconnected: {0}", ConsoleColor.DarkRed), dcReason);
+                    UI.AuthView.Status = ((FormattedString)("Disconnected: {0}", ConsoleColor.DarkRed)).Format(dcReason.ToString().ToDisplayName());
                     break;
                 case ServerMessageType.SPY_NIGHT_INFO:
                     ServerMessageParsers.SPY_NIGHT_INFO.Build(buffer, index, length).Parse(parser =>
@@ -993,6 +996,11 @@ namespace ToSTextClient
                 Debug.WriteLine("Connection Error: {0}", ex.Message);
                 Debug.WriteLine(ex.ToString());
                 UI.StatusLine = "Connection lost";
+                UI.CommandContext = CommandContext.AUTHENTICATING;
+            }
+            catch (ObjectDisposedException)
+            {
+                Debug.WriteLine("Socket disposed");
                 UI.CommandContext = CommandContext.AUTHENTICATING;
             }
         }
