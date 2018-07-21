@@ -104,25 +104,25 @@ namespace ToSTextClient
             };
             inputContext = AuthView;
 
-            RegisterCommand(helpCommand = new CommandGroup("View a list of available commands", this, "Topic", "Topics", cmd => helpView.Topic = null, ~CommandContext.NONE), "help", "?");
+            RegisterCommand(helpCommand = new CommandGroup("View a list of available commands", this, "Topic", "Topics", cmd => helpView.Topic = null, activeContext => true), "help", "?");
             RegisterCommand(new CommandGroup("Open the {0} view", this, "View", "Views")
-                .Register(new Command("Open the help view", ~CommandContext.NONE, cmd => OpenSideView(helpView)), "help")
-                .Register(new Command("Open the game modes view", CommandContext.HOME, cmd => OpenSideView(GameModeView)), "modes")
-                .Register(new Command("Open the role list view", CommandContext.LOBBY | CommandContext.GAME, cmd => OpenSideView(RoleListView)), "roles", "rolelist")
-                .Register(new Command("Open the player list view", CommandContext.LOBBY | CommandContext.GAME, cmd => OpenSideView(PlayerListView)), "players", "playerlist")
-                .Register(new Command("Open the graveyard view", CommandContext.GAME, cmd => OpenSideView(GraveyardView)), "graveyard")
-                .Register(new Command("Open the team view", CommandContext.GAME, cmd => OpenSideView(TeamView)), "team")
-                .Register(new Command("Open the LW/DN view", CommandContext.GAME, cmd => OpenSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "open");
+                .Register(new Command("Open the help view", activeContext => true, cmd => OpenSideView(helpView)), "help")
+                .Register(new Command("Open the game modes view", CommandContext.HOME.Any(), cmd => OpenSideView(GameModeView)), "modes")
+                .Register(new Command("Open the role list view", (CommandContext.LOBBY | CommandContext.GAME).Any(), cmd => OpenSideView(RoleListView)), "roles", "rolelist")
+                .Register(new Command("Open the player list view", (CommandContext.LOBBY | CommandContext.GAME).Any(), cmd => OpenSideView(PlayerListView)), "players", "playerlist")
+                .Register(new Command("Open the graveyard view", CommandContext.GAME.Any(), cmd => OpenSideView(GraveyardView)), "graveyard")
+                .Register(new Command("Open the team view", CommandContext.GAME.Any(), cmd => OpenSideView(TeamView)), "team")
+                .Register(new Command("Open the LW/DN view", CommandContext.GAME.Any(), cmd => OpenSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "open");
             RegisterCommand(new CommandGroup("Close the {0} view", this, "View", "Views")
-                .Register(new Command("Close the help view", ~CommandContext.NONE, cmd => CloseSideView(helpView)), "help")
-                .Register(new Command("Close the game modes view", CommandContext.HOME, cmd => CloseSideView(GameModeView)), "modes")
-                .Register(new Command("Close the role list view", CommandContext.LOBBY | CommandContext.GAME, cmd => CloseSideView(RoleListView)), "roles", "rolelist")
-                .Register(new Command("Close the player list view", CommandContext.LOBBY | CommandContext.GAME, cmd => CloseSideView(PlayerListView)), "players", "playerlist")
-                .Register(new Command("Close the graveyard view", CommandContext.GAME, cmd => CloseSideView(GraveyardView)), "graveyard")
-                .Register(new Command("Close the team view", CommandContext.GAME, cmd => CloseSideView(TeamView)), "team")
-                .Register(new Command("Close the LW/DN view", CommandContext.GAME, cmd => CloseSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "close");
-            RegisterCommand(new Command("Redraw the whole screen", ~CommandContext.NONE, cmd => RedrawAll()), "redraw");
-            RegisterCommand(new Command<Option<Player>>("Edit your LW or view {0}'s", CommandContext.GAME, ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
+                .Register(new Command("Close the help view", activeContext => true, cmd => CloseSideView(helpView)), "help")
+                .Register(new Command("Close the game modes view", CommandContext.HOME.Any(), cmd => CloseSideView(GameModeView)), "modes")
+                .Register(new Command("Close the role list view", (CommandContext.LOBBY | CommandContext.GAME).Any(), cmd => CloseSideView(RoleListView)), "roles", "rolelist")
+                .Register(new Command("Close the player list view", (CommandContext.LOBBY | CommandContext.GAME).Any(), cmd => CloseSideView(PlayerListView)), "players", "playerlist")
+                .Register(new Command("Close the graveyard view", CommandContext.GAME.Any(), cmd => CloseSideView(GraveyardView)), "graveyard")
+                .Register(new Command("Close the team view", CommandContext.GAME.Any(), cmd => CloseSideView(TeamView)), "team")
+                .Register(new Command("Close the LW/DN view", CommandContext.GAME.Any(), cmd => CloseSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "close");
+            RegisterCommand(new Command("Redraw the whole screen", activeContext => true, cmd => RedrawAll()), "redraw");
+            RegisterCommand(new Command<Option<Player>>("Edit your LW or view {0}'s", CommandContext.GAME.Any(), ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
             {
                 opTarget.Match(target =>
                 {
@@ -141,7 +141,7 @@ namespace ToSTextClient
                     RedrawCursor();
                 });
             }), "lw", "lastwill");
-            RegisterCommand(new Command<Option<Player>>("Edit your DN or view {0}'s", CommandContext.GAME, ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
+            RegisterCommand(new Command<Option<Player>>("Edit your DN or view {0}'s", CommandContext.GAME.Any(), ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
             {
                 opTarget.Match(target =>
                 {
@@ -160,13 +160,13 @@ namespace ToSTextClient
                     RedrawCursor();
                 });
             }), "dn", "deathnote");
-            RegisterCommand(new Command("Edit your forged will", CommandContext.GAME, cmd =>
+            RegisterCommand(new Command("Edit your forged will", CommandContext.GAME.Any(), cmd =>
             {
                 OpenSideView(myForgedWillView);
                 inputContext = myForgedWillView;
                 RedrawCursor();
             }), "fw", "forgedwill");
-            RegisterCommand(new Command("Say your will in chat", CommandContext.GAME, cmd => game.Parser.SendChatBoxMessage(game.GameState.LastWill)), "slw", "saylw", "saylastwill");
+            RegisterCommand(new Command("Say your will in chat", CommandContext.GAME.Any(), cmd => game.Parser.SendChatBoxMessage(game.GameState.LastWill)), "slw", "saylw", "saylastwill");
         }
 
         public void Run()
@@ -194,7 +194,7 @@ namespace ToSTextClient
                             string cmdn = cmd[0].ToLower();
                             if (commands.TryGetValue(cmdn, out Command command))
                             {
-                                if ((command.UsableContexts & _CommandContext) != 0) command.Run(cmdn, cmd, 1);
+                                if (command.IsAllowed(_CommandContext)) command.Run(cmdn, cmd, 1);
                                 else StatusLine = string.Format("Command not allowed in the current context: {0}", cmdn);
                             }
                             else StatusLine = string.Format("Command not found: {0}", cmdn);
@@ -219,8 +219,8 @@ namespace ToSTextClient
         public void RegisterCommand(Command command, params string[] names)
         {
             foreach (string name in names) commands[name] = command;
-            helpCommand.Register(new Command(command.Description, command.UsableContexts, cmd => helpView.Topic = (command, names)), names);
-            foreach (ArgumentParser parser in command.Parsers) helpCommand.Register(new Command(parser.Description, ~CommandContext.NONE, cmd => helpView.Topic = (parser, parser.HelpNames)), parser.HelpNames);
+            helpCommand.Register(new Command(command.Description, command.IsAllowed, cmd => helpView.Topic = (command, names)), names);
+            foreach (ArgumentParser parser in command.Parsers) helpCommand.Register(new Command(parser.Description, activeContext => true, cmd => helpView.Topic = (parser, parser.HelpNames)), parser.HelpNames);
             RedrawView(helpView);
         }
 
@@ -1233,7 +1233,7 @@ namespace ToSTextClient
         public override int GetFullHeight()
         {
             CommandContext context = getContext();
-            return _Topic == null ? commands.Values.Where(c => (c.UsableContexts & context) > 0).Distinct().Count() * 2 + 1 : _Topic.Value.cmd.Documentation.Count() + 2;
+            return _Topic == null ? commands.Values.Where(c => c.IsAllowed(context)).Distinct().Count() * 2 + 1 : _Topic.Value.cmd.Documentation.Count() + 2;
         }
 
         protected override int DrawUnsafe(int width, int height, int startLine = 0)
@@ -1253,7 +1253,7 @@ namespace ToSTextClient
             int currentLine = 0;
             if (_Topic == null)
             {
-                foreach (KeyValuePair<string, Command> command in commands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => (c.Value.UsableContexts & context) > 0))
+                foreach (KeyValuePair<string, Command> command in commands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => c.Value.IsAllowed(context)))
                 {
                     if (++currentLine > startLine)
                     {

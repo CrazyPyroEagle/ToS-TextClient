@@ -97,19 +97,19 @@ namespace ToSTextClient
                 CommandContext = CommandContext.AUTHENTICATING
             };
             Localization = new Localization(UI);
-            UI.RegisterCommand(new Command("Open the login view", CommandContext.AUTHENTICATING, cmd =>
+            UI.RegisterCommand(new Command("Open the login view", CommandContext.AUTHENTICATING.Any(), cmd =>
             {
                 UI.SetMainView(UI.AuthView);
                 UI.SetInputContext(UI.AuthView);
             }), "login", "auth", "authenticate");
-            UI.RegisterCommand(new Command("Disconnect from the server", CommandContext.HOME | CommandContext.GAME, cmd =>
+            UI.RegisterCommand(new Command("Disconnect from the server", (CommandContext.HOME | CommandContext.GAME).Any(), cmd =>
             {
                 socket.Close();
                 UI.CommandContext = CommandContext.AUTHENTICATING;
                 UI.SetMainView(UI.AuthView);
                 UI.SetInputContext(UI.AuthView);
             }), "dc", "logout", "logoff", "disconnect");
-            UI.RegisterCommand(new Command<GameMode>("Join a lobby for {0}", CommandContext.HOME, ArgumentParsers.ForEnum<GameMode>(UI), (cmd, gameMode) =>
+            UI.RegisterCommand(new Command<GameMode>("Join a lobby for {0}", CommandContext.HOME.Any(), ArgumentParsers.ForEnum<GameMode>(UI), (cmd, gameMode) =>
             {
                 if (ActiveGameModes.Contains(gameMode))
                 {
@@ -118,121 +118,121 @@ namespace ToSTextClient
                 }
                 else UI.StatusLine = string.Format("Cannot join game mode: {0}", gameMode.ToString().ToDisplayName());
             }), "join");
-            UI.RegisterCommand(new Command("Leave the queue", CommandContext.HOME, cmd => ClientMessageParsers.LeaveRankedQueue(Parser)), "leavequeue");
-            UI.RegisterCommand(new Command("Accept the queue popup", CommandContext.HOME, cmd => Parser.AcceptRanked()), "accept");
-            UI.RegisterCommand(new Command("Exit the game", CommandContext.AUTHENTICATING | CommandContext.HOME, cmd => UI.RunInput = false), "quit", "exit");
-            UI.RegisterCommand(new Command<Language>("Set the lobby language", CommandContext.HOME, ArgumentParsers.ForEnum<Language>(UI), (cmd, lang) => Parser.UpdateSettings(Setting.SELECTED_QUEUE_LANGUAGE, (byte)lang)), "lang", "language");
-            UI.RegisterCommand(new Command("Leave the game", CommandContext.LOBBY | CommandContext.GAME, cmd => Parser.LeaveGame()), "leave");
-            UI.RegisterCommand(new Command("Leave the post-game lobby", CommandContext.POST_GAME, cmd => Parser.LeavePostGameLobby()), "leavepost");
-            UI.RegisterCommand(new Command("Vote to repick the host", CommandContext.LOBBY, cmd => Parser.VoteToRepickHost()), "repick");
-            UI.RegisterCommand(new Command<Role>("Add {0} to the role list", CommandContext.HOST, ArgumentParsers.ForEnum<Role>(UI), (cmd, role) =>
+            UI.RegisterCommand(new Command("Leave the queue", CommandContext.HOME.Any(), cmd => ClientMessageParsers.LeaveRankedQueue(Parser)), "leavequeue");
+            UI.RegisterCommand(new Command("Accept the queue popup", CommandContext.HOME.Any(), cmd => Parser.AcceptRanked()), "accept");
+            UI.RegisterCommand(new Command("Exit the game", (CommandContext.AUTHENTICATING | CommandContext.HOME).Any(), cmd => UI.RunInput = false), "quit", "exit");
+            UI.RegisterCommand(new Command<Language>("Set the lobby language", CommandContext.HOME.Any(), ArgumentParsers.ForEnum<Language>(UI), (cmd, lang) => Parser.UpdateSettings(Setting.SELECTED_QUEUE_LANGUAGE, (byte)lang)), "lang", "language");
+            UI.RegisterCommand(new Command("Leave the game", (CommandContext.LOBBY | CommandContext.GAME).Any(), cmd => Parser.LeaveGame()), "leave");
+            UI.RegisterCommand(new Command("Leave the post-game lobby", CommandContext.POST_GAME.Any(), cmd => Parser.LeavePostGameLobby()), "leavepost");
+            UI.RegisterCommand(new Command("Vote to repick the host", CommandContext.LOBBY.Any(), cmd => Parser.VoteToRepickHost()), "repick");
+            UI.RegisterCommand(new Command<Role>("Add {0} to the role list", CommandContext.HOST.Any(), ArgumentParsers.ForEnum<Role>(UI), (cmd, role) =>
             {
                 Parser.ClickedOnAddButton(role);
                 GameState.AddRole(role);
             }), "add");
-            UI.RegisterCommand(new Command<byte>("Remove {0} from the role list", CommandContext.HOST, ArgumentParsers.Position(UI), (cmd, position) =>
+            UI.RegisterCommand(new Command<byte>("Remove {0} from the role list", CommandContext.HOST.Any(), ArgumentParsers.Position(UI), (cmd, position) =>
             {
                 Parser.ClickedOnRemoveButton(position);
                 GameState.RemoveRole(position);
             }), "remove");
-            UI.RegisterCommand(new Command("Force the game to start", CommandContext.HOST, cmd => Parser.ClickedOnStartButton()), "start");
-            UI.RegisterCommand(new Command<string>("Set your name to {0}", CommandContext.PICK_NAMES, ArgumentParsers.Text(UI, "Name"), (cmd, name) => Parser.ChooseName(name)), "n", "name");
-            UI.RegisterCommand(new Command<Player>("Set your target to {0}", CommandContext.NIGHT, ArgumentParsers.Player(UI), (cmd, target) =>
+            UI.RegisterCommand(new Command("Force the game to start", CommandContext.HOST.Any(), cmd => Parser.ClickedOnStartButton()), "start");
+            UI.RegisterCommand(new Command<string>("Set your name to {0}", CommandContext.PICK_NAMES.Any(), ArgumentParsers.Text(UI, "Name"), (cmd, name) => Parser.ChooseName(name)), "n", "name");
+            UI.RegisterCommand(new Command<Player>("Set your target to {0}", CommandContext.NIGHT.Any(), ArgumentParsers.Player(UI), (cmd, target) =>
             {
                 // TODO: Add check for whether <target> is a valid target for the user's role
                 Parser.SetTarget(target);
                 if (GameState.Role.IsMafia()) Parser.SetTargetMafiaOrWitch(target, target == Player.JAILOR ? TargetType.CANCEL_TARGET_1 : TargetType.SET_TARGET_1);
                 UI.GameView.AppendLine(target == Player.JAILOR ? "Unset target" : "Set target to {0}", GameState.ToName(target));
             }), "t", "target");
-            UI.RegisterCommand(new Command<Player>("Set your second target to {0}", CommandContext.NIGHT, ArgumentParsers.Player(UI), (cmd, target) =>
+            UI.RegisterCommand(new Command<Player>("Set your second target to {0}", CommandContext.NIGHT.Any(), ArgumentParsers.Player(UI), (cmd, target) =>
             {
                 // TODO: Add check for whether <target> is a valid second target for the user's role
                 Parser.SetSecondTarget(target);
                 if (GameState.Role.IsMafia()) Parser.SetTargetMafiaOrWitch(target, target == Player.JAILOR ? TargetType.CANCEL_TARGET_2 : TargetType.SET_TARGET_2);
                 UI.GameView.AppendLine(target == Player.JAILOR ? "Unset secondary target" : "Set secondary target to {0}", GameState.ToName(target));
             }), "t2", "target2");
-            UI.RegisterCommand(new Command<Player>("Set your day choice to {0}", CommandContext.DAY, ArgumentParsers.Player(UI), (cmd, target) =>
+            UI.RegisterCommand(new Command<Player>("Set your day choice to {0}", CommandContext.DAY.Any(), ArgumentParsers.Player(UI), (cmd, target) =>
             {
                 // TODO: Add check for whether <target> is a valid day choice for the user's role
                 Parser.SetDayChoice(target);
                 UI.GameView.AppendLine(target == Player.JAILOR ? "Unset day target" : "Set day target to {0}", GameState.ToName(target));
             }), "td", "targetday");
-            UI.RegisterCommand(new Command<DuelAttack>("Attack with your {0}", CommandContext.DUEL_ATTACKING, ArgumentParsers.ForEnum<DuelAttack>(UI, "Attack", true), (cmd, attack) =>
+            UI.RegisterCommand(new Command<DuelAttack>("Attack with your {0}", CommandContext.DUEL_ATTACKING.Any(), ArgumentParsers.ForEnum<DuelAttack>(UI, "Attack", true), (cmd, attack) =>
             {
                 Parser.SetPirateChoice((byte)attack);
                 UI.GameView.AppendLine("You have decided to attack with your {0}", attack.ToString().ToLower().Replace('_', ' '));
             }), "attack");
-            UI.RegisterCommand(new Command<DuelDefense>("Defend with your {0}", CommandContext.DUEL_ATTACKING, ArgumentParsers.ForEnum<DuelDefense>(UI, "Defense"), (cmd, defense) =>
+            UI.RegisterCommand(new Command<DuelDefense>("Defend with your {0}", CommandContext.DUEL_ATTACKING.Any(), ArgumentParsers.ForEnum<DuelDefense>(UI, "Defense"), (cmd, defense) =>
             {
                 Parser.SetPirateChoice((byte)defense);
                 UI.GameView.AppendLine("You have decided to defend with your {0}", defense.ToString().ToLower().Replace('_', ' '));
             }), "defense");
-            UI.RegisterCommand(new Command<Potion>("Use the {0} potion", CommandContext.NIGHT, ArgumentParsers.ForEnum<Potion>(UI), (cmd, potion) =>
+            UI.RegisterCommand(new Command<Potion>("Use the {0} potion", CommandContext.NIGHT.Any(), ArgumentParsers.ForEnum<Potion>(UI), (cmd, potion) =>
             {
                 Parser.SetPotionMasterChoice(potion);
                 UI.GameView.AppendLine("You have decided to use the {0} potion", potion.ToString().ToLower().Replace('_', ' '));
             }), "potion");
-            UI.RegisterCommand(new Command<LocalizationTable>("Make your target see {0}", CommandContext.NIGHT, ArgumentParsers.ForEnum<LocalizationTable>(UI), (cmd, message) =>
+            UI.RegisterCommand(new Command<LocalizationTable>("Make your target see {0}", CommandContext.NIGHT.Any(), ArgumentParsers.ForEnum<LocalizationTable>(UI), (cmd, message) =>
             {
                 Parser.SetHypnotistChoice(message);
                 UI.GameView.AppendLine("Your target will see: {0}", Localization.Of(message));
             }), "hm", "hypnotizemessage");
-            UI.RegisterCommand(new Command<Player>("Vote {0} up to the stand", CommandContext.VOTING, ArgumentParsers.Player(UI), (cmd, target) => Parser.SetVote(target)), "v", "vote");
-            UI.RegisterCommand(new Command("Vote guilty", CommandContext.JUDGEMENT, cmd => Parser.JudgementVoteGuilty()), "g", "guilty");
-            UI.RegisterCommand(new Command("Vote innocent", CommandContext.JUDGEMENT, cmd => Parser.JudgementVoteInnocent()), "i", "innocent");
-            UI.RegisterCommand(new Command<Player, string>("Whisper {1} to {0}", CommandContext.DAY, ArgumentParsers.Player(UI), ArgumentParsers.Text(UI, "Message"), (cmd, target, message) => Parser.SendPrivateMessage(target, message)), "w", "pm", "whisper");
-            UI.RegisterCommand(new Command<ExecuteReason>("Set your execute reason to [Reason]", CommandContext.GAME, ArgumentParsers.ForEnum<ExecuteReason>(UI, "[Reason]", true), (cmd, reason) => Parser.SetJailorDeathNote(reason)), "jn", "jailornote");
-            UI.RegisterCommand(new Command<Player, ReportReason, string>("Report {0} for {1}", CommandContext.GAME, ArgumentParsers.Player(UI), ArgumentParsers.ForEnum<ReportReason>(UI, "[Reason]"), ArgumentParsers.Text("Message"), (cmd, player, reason, message) =>
+            UI.RegisterCommand(new Command<Player>("Vote {0} up to the stand", CommandContext.VOTING.Any(), ArgumentParsers.Player(UI), (cmd, target) => Parser.SetVote(target)), "v", "vote");
+            UI.RegisterCommand(new Command("Vote guilty", CommandContext.JUDGEMENT.Any(), cmd => Parser.JudgementVoteGuilty()), "g", "guilty");
+            UI.RegisterCommand(new Command("Vote innocent", CommandContext.JUDGEMENT.Any(), cmd => Parser.JudgementVoteInnocent()), "i", "innocent");
+            UI.RegisterCommand(new Command<Player, string>("Whisper {1} to {0}", CommandContext.DAY.Any(), ArgumentParsers.Player(UI), ArgumentParsers.Text(UI, "Message"), (cmd, target, message) => Parser.SendPrivateMessage(target, message)), "w", "pm", "whisper");
+            UI.RegisterCommand(new Command<ExecuteReason>("Set your execute reason to [Reason]", CommandContext.GAME.Any(), ArgumentParsers.ForEnum<ExecuteReason>(UI, "[Reason]", true), (cmd, reason) => Parser.SetJailorDeathNote(reason)), "jn", "jailornote");
+            UI.RegisterCommand(new Command<Player, ReportReason, string>("Report {0} for {1}", CommandContext.GAME.Any(), ArgumentParsers.Player(UI), ArgumentParsers.ForEnum<ReportReason>(UI, "[Reason]"), ArgumentParsers.Text("Message"), (cmd, player, reason, message) =>
             {
                 Parser.ReportPlayer(player, reason, message);
                 UI.GameView.AppendLine(("Reported {0} for {1}", ConsoleColor.Yellow, ConsoleColor.Black), GameState.ToName(player), reason.ToString().ToLower().Replace('_', ' '));
             }), "report");
             UI.RegisterCommand(new CommandGroup("Use the {0} system command", UI, "Subcommand", "Subcommands")
-                .Register(new Command<string>("Send {0} to all users", ~CommandContext.AUTHENTICATING, ArgumentParsers.Text(UI, "Message"), (cmd, message) => Parser.SendSystemMessage(SystemCommand.MESSAGE, message)), "message")
-                .Register(new Command<string>("Send {0} to all players in your game", CommandContext.LOBBY | CommandContext.GAME, ArgumentParsers.Text(UI, "Message"), (cmd, message) => Parser.SendSystemMessage(SystemCommand.GAME_MESSAGE, message)), "gamemessage")
-                .Register(new Command<string>("Ban {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.BAN, username)), "ban")
-                .Register(new Command<Player>("Get {0}'s role and username", CommandContext.GAME, ArgumentParsers.Player(UI), (cmd, player) => Parser.SendSystemMessage(SystemCommand.IDENTIFY, ((byte)player).ToString())), "identify")
-                .Register(new Command("Queue a restart", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.RESTART)), "restart")
-                .Register(new Command("Cancel the queued restart", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.CANCEL_RESTART)), "cancelrestart")
-                .Register(new Command<string>("Grant {0} 1300 Town Points", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_POINTS, username)), "grantpoints")
-                .Register(new Command<string>("Suspend {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.SUSPEND, username)), "suspend")
-                .Register(new Command("Reload the shop data", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.RELOAD_XML, "\x01")), "reloadxml")
-                .Register(new Command<string>("Whisper to {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.WHISPER, username)), "whisper")
-                .Register(new Command<string>("Unban {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.UNBAN, username)), "unban")
-                .Register(new Command<string>("Get account info for {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.ACCOUNT_INFO, username)), "accountinfo")
-                .Register(new Command<string, Achievement>("Grant {1} to {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), ArgumentParsers.ForEnum<Achievement>(UI, an: true), (cmd, username, achievement) => Parser.SendSystemMessage(SystemCommand.GRANT_ACHIEVEMENT, username, ((byte)achievement).ToString())), "grantachievement")
-                .Register(new Command("Toggle dev mode", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.DEV_LOGIN)), "devlogin")
-                .Register(new Command<Promotion>("Request {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.ForEnum<Promotion>(UI), (cmd, promotion) => Parser.SendSystemMessage(SystemCommand.REQUEST_PROMOTION, ((byte)promotion).ToString())), "requestpromotion")
-                .Register(new Command("Reset your account", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.RESET_ACCOUNT, "\x01")), "resetaccount")
-                .Register(new Command<Character>("Grant yourself {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.ForEnum<Character>(UI), (cmd, character) => Parser.SendSystemMessage(SystemCommand.GRANT_CHARACTER, ((byte)character).ToString())), "grantcharacter")
-                .Register(new Command<Background>("Grant yourself {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.ForEnum<Background>(UI), (cmd, background) => Parser.SendSystemMessage(SystemCommand.GRANT_BACKGROUND, ((byte)background).ToString())), "grantbackground")
-                .Register(new Command<DeathAnimation>("Grant yourself {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.ForEnum<DeathAnimation>(UI), (cmd, deathAnimation) => Parser.SendSystemMessage(SystemCommand.GRANT_DEATH_ANIMATION, ((byte)deathAnimation).ToString())), "grantdeathanimation")
-                .Register(new Command<House>("Grant yourself {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.ForEnum<House>(UI), (cmd, house) => Parser.SendSystemMessage(SystemCommand.GRANT_HOUSE, ((byte)house).ToString())), "granthouse")
-                .Register(new Command<LobbyIcon>("Grant yourself {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.ForEnum<LobbyIcon>(UI), (cmd, lobbyIcon) => Parser.SendSystemMessage(SystemCommand.GRANT_LOBBY_ICON, ((byte)lobbyIcon).ToString())), "grantlobbyicon")
-                .Register(new Command<Pack>("Grant yourself {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.ForEnum<Pack>(UI), (cmd, pack) => Parser.SendSystemMessage(SystemCommand.GRANT_PACK, ((byte)pack).ToString())), "grantpack")
-                .Register(new Command<Pet>("Grant yourself {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.ForEnum<Pet>(UI), (cmd, pet) => Parser.SendSystemMessage(SystemCommand.GRANT_PET, ((byte)pet).ToString())), "grantpet")
-                .Register(new Command<Scroll>("Grant yourself {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.ForEnum<Scroll>(UI), (cmd, scroll) => Parser.SendSystemMessage(SystemCommand.GRANT_SCROLL, ((byte)scroll).ToString())), "grantscroll")
-                .Register(new Command("Reset your tutorial progress", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.RESET_TUTORIAL_PROGRESS, "\x01")), "resettutorialprogress")
-                .Register(new Command("Reload the promotion data", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.RELOAD_PROMOTION_XML, "\x01")), "reloadpromotionxml")
-                .Register(new Command<string, Promotion>("Grant {1} to {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), ArgumentParsers.ForEnum<Promotion>(UI), (cmd, username, promotion) => Parser.SendSystemMessage(SystemCommand.GRANT_PROMOTION, username, ((byte)promotion).ToString())), "grantpromotion")
-                .Register(new Command<Role>("Set your role to {0}", CommandContext.LOBBY | CommandContext.PICK_NAMES, ArgumentParsers.ForEnum<Role>(UI), (cmd, role) => Parser.SendSystemMessage(SystemCommand.SET_ROLE, ((byte)role).ToString())), "setrole")
-                .Register(new Command<AccountItem>("Grant yourself {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.ForEnum<AccountItem>(UI), (cmd, accountItem) => Parser.SendSystemMessage(SystemCommand.GRANT_ACCOUNT_ITEM, ((byte)accountItem).ToString())), "grantaccountitem")
-                .Register(new Command<string>("Force {0} to change username", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.FORCE_NAME_CHANGE, username)), "forcenamechange")
-                .Register(new Command<string>("Grant {0} 5200 Merit Points", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_MERIT, username)), "grantmerit")
-                .Register(new Command("Enable global double MP", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.SET_FREE_CURRENCY_MULTIPLIER, "2")), "doubleglobalfreecurrencymultiplier")
-                .Register(new Command("Disable global double MP", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.SET_FREE_CURRENCY_MULTIPLIER, "1")), "resetglobalfreecurrencymultiplier")
-                .Register(new Command<string, string>("Set {0}'s referrer to {1}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), ArgumentParsers.Username(UI), (cmd, referee, referrer) => Parser.SendSystemMessage(SystemCommand.GRANT_REFER_A_FRIEND, referee, referrer)), "grantreferafriend")
-                .Register(new Command("Reload shop, cauldron & Ranked", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.RELOAD_CACHES)), "reloadcaches")
-                .Register(new Command("Reset your cauldron cooldown", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.RESET_CAULDRON_COOLDOWN, "\x01")), "resetcauldroncooldown")
-                .Register(new Command("Toggle test purchases", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.TOGGLE_TEST_PURCHASES)), "toggletestpurchases")
-                .Register(new Command("Toggle free Coven", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.TOGGLE_FREE_COVEN, "\x01")), "togglefreecoven")
-                .Register(new Command("Toggle your Coven ownership", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.TOGGLE_ACCOUNT_FEATURE, "2")), "toggleusercoven")
-                .Register(new Command("Toggle your Web Premium ownership", ~CommandContext.AUTHENTICATING, cmd => Parser.SendSystemMessage(SystemCommand.TOGGLE_ACCOUNT_FEATURE, "4")), "toggleuserwebpremium")
-                .Register(new Command<string>("Unlink Steam from {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.UNLINK_STEAM, username)), "unlinksteam")
-                .Register(new Command<string>("Unlink Coven from {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.UNLINK_COVEN, username)), "unlinkcoven")
-                .Register(new Command<string>("Grant Coven to {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_COVEN, username)), "grantcoven")
-                .Register(new Command<string>("Grant Web Premium to {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_WEB_PREMIUM, username)), "grantwebpremium")
-                .Register(new Command<string>("Kick {0}", ~CommandContext.AUTHENTICATING, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.KICK_USER, username)), "kickuser"), "system");
+                .Register(new Command<string>("Send {0} to all users", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Text(UI, "Message"), (cmd, message) => Parser.SendSystemMessage(SystemCommand.MESSAGE, message)), "message")
+                .Register(new Command<string>("Send {0} to all players in your game", (CommandContext.LOBBY | CommandContext.GAME).Any(), ArgumentParsers.Text(UI, "Message"), (cmd, message) => Parser.SendSystemMessage(SystemCommand.GAME_MESSAGE, message)), "gamemessage")
+                .Register(new Command<string>("Ban {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.BAN, username)), "ban")
+                .Register(new Command<Player>("Get {0}'s role and username", CommandContext.GAME.Any(), ArgumentParsers.Player(UI), (cmd, player) => Parser.SendSystemMessage(SystemCommand.IDENTIFY, ((byte)player).ToString())), "identify")
+                .Register(new Command("Queue a restart", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.RESTART)), "restart")
+                .Register(new Command("Cancel the queued restart", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.CANCEL_RESTART)), "cancelrestart")
+                .Register(new Command<string>("Grant {0} 1300 Town Points", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_POINTS, username)), "grantpoints")
+                .Register(new Command<string>("Suspend {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.SUSPEND, username)), "suspend")
+                .Register(new Command("Reload the shop data", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.RELOAD_XML, "\x01")), "reloadxml")
+                .Register(new Command<string>("Whisper to {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.WHISPER, username)), "whisper")
+                .Register(new Command<string>("Unban {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.UNBAN, username)), "unban")
+                .Register(new Command<string>("Get account info for {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.ACCOUNT_INFO, username)), "accountinfo")
+                .Register(new Command<string, Achievement>("Grant {1} to {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), ArgumentParsers.ForEnum<Achievement>(UI, an: true), (cmd, username, achievement) => Parser.SendSystemMessage(SystemCommand.GRANT_ACHIEVEMENT, username, ((byte)achievement).ToString())), "grantachievement")
+                .Register(new Command("Toggle dev mode", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.DEV_LOGIN)), "devlogin")
+                .Register(new Command<Promotion>("Request {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.ForEnum<Promotion>(UI), (cmd, promotion) => Parser.SendSystemMessage(SystemCommand.REQUEST_PROMOTION, ((byte)promotion).ToString())), "requestpromotion")
+                .Register(new Command("Reset your account", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.RESET_ACCOUNT, "\x01")), "resetaccount")
+                .Register(new Command<Character>("Grant yourself {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.ForEnum<Character>(UI), (cmd, character) => Parser.SendSystemMessage(SystemCommand.GRANT_CHARACTER, ((byte)character).ToString())), "grantcharacter")
+                .Register(new Command<Background>("Grant yourself {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.ForEnum<Background>(UI), (cmd, background) => Parser.SendSystemMessage(SystemCommand.GRANT_BACKGROUND, ((byte)background).ToString())), "grantbackground")
+                .Register(new Command<DeathAnimation>("Grant yourself {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.ForEnum<DeathAnimation>(UI), (cmd, deathAnimation) => Parser.SendSystemMessage(SystemCommand.GRANT_DEATH_ANIMATION, ((byte)deathAnimation).ToString())), "grantdeathanimation")
+                .Register(new Command<House>("Grant yourself {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.ForEnum<House>(UI), (cmd, house) => Parser.SendSystemMessage(SystemCommand.GRANT_HOUSE, ((byte)house).ToString())), "granthouse")
+                .Register(new Command<LobbyIcon>("Grant yourself {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.ForEnum<LobbyIcon>(UI), (cmd, lobbyIcon) => Parser.SendSystemMessage(SystemCommand.GRANT_LOBBY_ICON, ((byte)lobbyIcon).ToString())), "grantlobbyicon")
+                .Register(new Command<Pack>("Grant yourself {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.ForEnum<Pack>(UI), (cmd, pack) => Parser.SendSystemMessage(SystemCommand.GRANT_PACK, ((byte)pack).ToString())), "grantpack")
+                .Register(new Command<Pet>("Grant yourself {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.ForEnum<Pet>(UI), (cmd, pet) => Parser.SendSystemMessage(SystemCommand.GRANT_PET, ((byte)pet).ToString())), "grantpet")
+                .Register(new Command<Scroll>("Grant yourself {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.ForEnum<Scroll>(UI), (cmd, scroll) => Parser.SendSystemMessage(SystemCommand.GRANT_SCROLL, ((byte)scroll).ToString())), "grantscroll")
+                .Register(new Command("Reset your tutorial progress", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.RESET_TUTORIAL_PROGRESS, "\x01")), "resettutorialprogress")
+                .Register(new Command("Reload the promotion data", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.RELOAD_PROMOTION_XML, "\x01")), "reloadpromotionxml")
+                .Register(new Command<string, Promotion>("Grant {1} to {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), ArgumentParsers.ForEnum<Promotion>(UI), (cmd, username, promotion) => Parser.SendSystemMessage(SystemCommand.GRANT_PROMOTION, username, ((byte)promotion).ToString())), "grantpromotion")
+                .Register(new Command<Role>("Set your role to {0}", (CommandContext.LOBBY | CommandContext.PICK_NAMES).Any(), ArgumentParsers.ForEnum<Role>(UI), (cmd, role) => Parser.SendSystemMessage(SystemCommand.SET_ROLE, ((byte)role).ToString())), "setrole")
+                .Register(new Command<AccountItem>("Grant yourself {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.ForEnum<AccountItem>(UI), (cmd, accountItem) => Parser.SendSystemMessage(SystemCommand.GRANT_ACCOUNT_ITEM, ((byte)accountItem).ToString())), "grantaccountitem")
+                .Register(new Command<string>("Force {0} to change username", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.FORCE_NAME_CHANGE, username)), "forcenamechange")
+                .Register(new Command<string>("Grant {0} 5200 Merit Points", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_MERIT, username)), "grantmerit")
+                .Register(new Command("Enable global double MP", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.SET_FREE_CURRENCY_MULTIPLIER, "2")), "doubleglobalfreecurrencymultiplier")
+                .Register(new Command("Disable global double MP", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.SET_FREE_CURRENCY_MULTIPLIER, "1")), "resetglobalfreecurrencymultiplier")
+                .Register(new Command<string, string>("Set {0}'s referrer to {1}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), ArgumentParsers.Username(UI), (cmd, referee, referrer) => Parser.SendSystemMessage(SystemCommand.GRANT_REFER_A_FRIEND, referee, referrer)), "grantreferafriend")
+                .Register(new Command("Reload shop, cauldron & Ranked", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.RELOAD_CACHES)), "reloadcaches")
+                .Register(new Command("Reset your cauldron cooldown", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.RESET_CAULDRON_COOLDOWN, "\x01")), "resetcauldroncooldown")
+                .Register(new Command("Toggle test purchases", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.TOGGLE_TEST_PURCHASES)), "toggletestpurchases")
+                .Register(new Command("Toggle free Coven", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.TOGGLE_FREE_COVEN, "\x01")), "togglefreecoven")
+                .Register(new Command("Toggle your Coven ownership", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.TOGGLE_ACCOUNT_FEATURE, "2")), "toggleusercoven")
+                .Register(new Command("Toggle your Web Premium ownership", CommandContext.AUTHENTICATED.Any(), cmd => Parser.SendSystemMessage(SystemCommand.TOGGLE_ACCOUNT_FEATURE, "4")), "toggleuserwebpremium")
+                .Register(new Command<string>("Unlink Steam from {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.UNLINK_STEAM, username)), "unlinksteam")
+                .Register(new Command<string>("Unlink Coven from {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.UNLINK_COVEN, username)), "unlinkcoven")
+                .Register(new Command<string>("Grant Coven to {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_COVEN, username)), "grantcoven")
+                .Register(new Command<string>("Grant Web Premium to {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_WEB_PREMIUM, username)), "grantwebpremium")
+                .Register(new Command<string>("Kick {0}", CommandContext.AUTHENTICATED.Any(), ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.KICK_USER, username)), "kickuser"), "system");
         }
 
         public void Authenticate(Socket socket, string username, SecureString password)
@@ -265,7 +265,7 @@ namespace ToSTextClient
                     {
                         UI.AuthView.Status = null;
                         UI.SetMainView(UI.HomeView);
-                        UI.CommandContext = (UI.CommandContext & ~CommandContext.AUTHENTICATING) | CommandContext.HOME;
+                        UI.CommandContext = (UI.CommandContext & ~CommandContext.AUTHENTICATING) | CommandContext.AUTHENTICATED | CommandContext.HOME;
                         UI.HomeView.ReplaceLine(0, ("Authenticated. Loading user information...", ConsoleColor.DarkGreen));
                     }
                     else UI.AuthView.Status = ("Authentication failed: registration required", ConsoleColor.DarkRed);
@@ -1116,6 +1116,9 @@ namespace ToSTextClient
                     return true;
             }
         }
+
+        public static Func<CommandContext, bool> Any(this CommandContext flags) => activeContext => (activeContext & flags) != 0;
+        public static Func<CommandContext, bool> All(this CommandContext flags) => activeContext => (activeContext & flags) == flags;
 
         public static IEnumerable<string> Wrap(this string value, int lineWidth)
         {

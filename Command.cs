@@ -12,26 +12,33 @@ namespace ToSTextClient
         IEnumerable<string> Documentation { get; }
     }
 
-    class Command : IDocumented
+    interface IContextual
+    {
+        bool IsAllowed(CommandContext activeContext);
+    }
+
+    class Command : IDocumented, IContextual
     {
         public virtual string UsageLine => "";
         public virtual string Description => description;
         public virtual IEnumerable<string> Documentation => ToDocs(Parsers);
         public virtual ArgumentParser[] Parsers => new ArgumentParser[0];
-        public CommandContext UsableContexts { get; protected set; }
+        protected Func<CommandContext, bool> isAllowed;
         
         protected Action<string> runner;
         protected string description;
 
-        public Command(string description, CommandContext usableContexts, Action<string> runner) : this(description, usableContexts) => this.runner = runner;
+        public Command(string description, Func<CommandContext, bool> isAllowed, Action<string> runner) : this(description, isAllowed) => this.runner = runner;
 
-        protected Command(string description, CommandContext usableContexts)
+        protected Command(string description, Func<CommandContext, bool> isAllowed)
         {
             this.description = description;
-            UsableContexts = usableContexts;
+            this.isAllowed = isAllowed;
         }
 
         public virtual void Run(string cmd, string[] args, int index) => runner(cmd);
+
+        public bool IsAllowed(CommandContext activeContext) => isAllowed(activeContext);
 
         protected IEnumerable<string> ToDocs(params ArgumentParser[] args) => args.SelectMany(p => new string[] { string.Format("  {0}", p.DisplayName), p.Description });
     }
@@ -45,9 +52,9 @@ namespace ToSTextClient
         protected ArgumentParser<T1> parser1;
         protected new Action<string, T1> runner;
 
-        public Command(string description, CommandContext usableContexts, ArgumentParser<T1> parser1, Action<string, T1> runner) : this(description, usableContexts, parser1) => this.runner = runner;
+        public Command(string description, Func<CommandContext, bool> isAllowed, ArgumentParser<T1> parser1, Action<string, T1> runner) : this(description, isAllowed, parser1) => this.runner = runner;
 
-        protected Command(string description, CommandContext usableContexts, ArgumentParser<T1> parser1) : base(description, usableContexts) => this.parser1 = parser1;
+        protected Command(string description, Func<CommandContext, bool> isAllowed, ArgumentParser<T1> parser1) : base(description, isAllowed) => this.parser1 = parser1;
 
         public override void Run(string cmd, string[] args, int index)
         {
@@ -64,9 +71,9 @@ namespace ToSTextClient
         protected ArgumentParser<T2> parser2;
         protected new Action<string, T1, T2> runner;
 
-        public Command(string description, CommandContext usableContexts, ArgumentParser<T1> parser1, ArgumentParser<T2> parser2, Action<string, T1, T2> runner) : this(description, usableContexts, parser1, parser2) => this.runner = runner;
+        public Command(string description, Func<CommandContext, bool> isAllowed, ArgumentParser<T1> parser1, ArgumentParser<T2> parser2, Action<string, T1, T2> runner) : this(description, isAllowed, parser1, parser2) => this.runner = runner;
 
-        protected Command(string description, CommandContext usableContexts, ArgumentParser<T1> parser1, ArgumentParser<T2> parser2) : base(description, usableContexts, parser1) => this.parser2 = parser2;
+        protected Command(string description, Func<CommandContext, bool> isAllowed, ArgumentParser<T1> parser1, ArgumentParser<T2> parser2) : base(description, isAllowed, parser1) => this.parser2 = parser2;
 
         public override void Run(string cmd, string[] args, int index)
         {
@@ -83,9 +90,9 @@ namespace ToSTextClient
         protected ArgumentParser<T3> parser3;
         protected new Action<string, T1, T2, T3> runner;
 
-        public Command(string description, CommandContext usableContexts, ArgumentParser<T1> parser1, ArgumentParser<T2> parser2, ArgumentParser<T3> parser3, Action<string, T1, T2, T3> runner) : this(description, usableContexts, parser1, parser2, parser3) => this.runner = runner;
+        public Command(string description, Func<CommandContext, bool> isAllowed, ArgumentParser<T1> parser1, ArgumentParser<T2> parser2, ArgumentParser<T3> parser3, Action<string, T1, T2, T3> runner) : this(description, isAllowed, parser1, parser2, parser3) => this.runner = runner;
 
-        protected Command(string description, CommandContext usableContexts, ArgumentParser<T1> parser1, ArgumentParser<T2> parser2, ArgumentParser<T3> parser3) : base(description, usableContexts, parser1, parser2) => this.parser3 = parser3;
+        protected Command(string description, Func<CommandContext, bool> isAllowed, ArgumentParser<T1> parser1, ArgumentParser<T2> parser2, ArgumentParser<T3> parser3) : base(description, isAllowed, parser1, parser2) => this.parser3 = parser3;
 
         public override void Run(string cmd, string[] args, int index)
         {
@@ -97,14 +104,14 @@ namespace ToSTextClient
     {
         public override string UsageLine => string.Format("[{0}]", subName);
         public override string Description => string.Format(description, string.Format("[{0}]", subName));
-        public override IEnumerable<string> Documentation => base.Documentation.Concat(commands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => (c.Value.UsableContexts & ui.CommandContext) > 0).SelectMany(c => new string[] { string.Format("  {0} {1}", c.Key, c.Value.UsageLine), c.Value.Description }).ListHeader(string.Format(" ~ {0}", subPlural)));
+        public override IEnumerable<string> Documentation => base.Documentation.Concat(commands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => c.Value.IsAllowed(ui.CommandContext)).SelectMany(c => new string[] { string.Format("  {0} {1}", c.Key, c.Value.UsageLine), c.Value.Description }).ListHeader(string.Format(" ~ {0}", subPlural)));
 
         protected IDictionary<string, Command> commands = new Dictionary<string, Command>();
         protected ITextUI ui;
         protected string subName;
         protected string subPlural;
         
-        public CommandGroup(string description, ITextUI ui, string subName, string subPlural, Action<string> runner = null, CommandContext usableContexts = CommandContext.NONE) : base(description, usableContexts, runner)
+        public CommandGroup(string description, ITextUI ui, string subName, string subPlural, Action<string> runner = null, Func<CommandContext, bool> isAllowed = null) : base(description, isAllowed ?? (activeContext => false), runner)
         {
             this.ui = ui;
             this.subName = subName;
@@ -125,7 +132,7 @@ namespace ToSTextClient
                 if (commands.TryGetValue(cmdn, out Command command))
                 {
                     index += length;
-                    if ((command.UsableContexts & ui.CommandContext) != 0) command.Run(cmdn, args, index);
+                    if (command.IsAllowed(ui.CommandContext)) command.Run(cmdn, args, index);
                     else ui.StatusLine = string.Format("{0} not allowed in the current context: {1}", subName, cmdn);
                     return;
                 }
@@ -136,7 +143,8 @@ namespace ToSTextClient
         public CommandGroup Register(Command cmd, params string[] names)
         {
             foreach (string name in names) commands[name] = cmd;
-            UsableContexts |= cmd.UsableContexts;
+            Func<CommandContext, bool> oldIsAllowed = isAllowed;
+            isAllowed = activeContext => oldIsAllowed(activeContext) || cmd.IsAllowed(activeContext);
             return this;
         }
     }
@@ -238,11 +246,12 @@ namespace ToSTextClient
     }
 
     [Flags]
-    enum CommandContext
+    public enum CommandContext
     {
         NONE,
         AUTHENTICATING,
-        HOME = AUTHENTICATING << 1,
+        AUTHENTICATED = AUTHENTICATING << 1,
+        HOME = AUTHENTICATED << 1,
         LOBBY = HOME << 1,
         HOST = LOBBY << 1,
         GAME = HOST << 1,
