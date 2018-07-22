@@ -84,11 +84,12 @@ namespace ToSTextClient
         protected string _DeathNote = "";
         protected string _ForgedWill = "";
 
-        public GameState(TextClient game, GameMode gameMode)
+        public GameState(TextClient game, GameMode gameMode, bool host)
         {
-            this.Game = game;
+            Game = game;
             GameMode = gameMode;
             PopulatePlayers();
+            Host = host;
         }
 
         public void OnStart(int playerCount)

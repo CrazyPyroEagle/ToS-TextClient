@@ -136,14 +136,14 @@ namespace ToSTextClient
             {
                 // TODO: Add check for whether <target> is a valid target for the user's role
                 Parser.SetTarget(target);
-                if (GameState.Role.IsMafia()) Parser.SetTargetMafiaOrWitch(target, target == Player.JAILOR ? TargetType.CANCEL_TARGET_1 : TargetType.SET_TARGET_1);
+                if (GameState.Role.IsMafia() || GameState.Role.IsCoven()) Parser.SetTargetMafiaOrWitch(target, target == Player.JAILOR ? TargetType.CANCEL_TARGET_1 : TargetType.SET_TARGET_1);
                 UI.GameView.AppendLine(target == Player.JAILOR ? "Unset target" : "Set target to {0}", GameState.ToName(target));
             }), "t", "target");
             UI.RegisterCommand(new Command<Player>("Set your second target to {0}", CommandContext.NIGHT.Any(), ArgumentParsers.Player(UI), (cmd, target) =>
             {
                 // TODO: Add check for whether <target> is a valid second target for the user's role
                 Parser.SetSecondTarget(target);
-                if (GameState.Role.IsMafia()) Parser.SetTargetMafiaOrWitch(target, target == Player.JAILOR ? TargetType.CANCEL_TARGET_2 : TargetType.SET_TARGET_2);
+                if (GameState.Role.IsMafia() || GameState.Role.IsCoven()) Parser.SetTargetMafiaOrWitch(target, target == Player.JAILOR ? TargetType.CANCEL_TARGET_2 : TargetType.SET_TARGET_2);
                 UI.GameView.AppendLine(target == Player.JAILOR ? "Unset secondary target" : "Set secondary target to {0}", GameState.ToName(target));
             }), "t2", "target2");
             UI.RegisterCommand(new Command<Player>("Set your day choice to {0}", CommandContext.DAY.Any(), ArgumentParsers.Player(UI), (cmd, target) =>
@@ -265,8 +265,7 @@ namespace ToSTextClient
                     break;
                 case ServerMessageType.CREATE_LOBBY:
                     ServerMessageParsers.CREATE_LOBBY.Build(buffer, index, length).Parse(out bool host).Parse(out GameMode gameMode);
-                    GameState = new GameState(this, gameMode);
-                    GameState.Host = host;
+                    GameState = new GameState(this, gameMode, host);
                     break;
                 case ServerMessageType.SET_HOST:
                     GameState.Host = true;
@@ -439,7 +438,7 @@ namespace ToSTextClient
                 // Add missing cases here
                 case ServerMessageType.PICK_NAMES:
                     ServerMessageParsers.PICK_NAMES.Build(buffer, index, length).Parse(out byte playerCount);
-                    if (GameState == null) GameState = new GameState(this, GameMode.RANKED);
+                    if (GameState == null) GameState = new GameState(this, GameMode.RANKED, false);
                     GameState.OnStart(playerCount);
                     break;
                 case ServerMessageType.NAMES_AND_POSITIONS_OF_USERS:
@@ -1096,6 +1095,23 @@ namespace ToSTextClient
                 case Role.COVEN_RANDOM_MAFIA:
                 case Role.COVEN_MAFIA_SUPPORT:
                 case Role.COVEN_MAFIA_DECEPTION:
+                    return true;
+            }
+        }
+
+        public static bool IsCoven(this Role role)
+        {
+            switch (role)
+            {
+                default:
+                    return false;
+                case Role.COVEN_LEADER:
+                case Role.POTION_MASTER:
+                case Role.HEX_MASTER:
+                case Role.NECROMANCER:
+                case Role.POISONER:
+                case Role.MEDUSA:
+                case Role.COVEN_RANDOM_COVEN:
                     return true;
             }
         }
