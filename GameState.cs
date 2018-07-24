@@ -19,7 +19,7 @@ namespace ToSTextClient
         public Player Self { get; set; }
         public Player Target { get => _Target; set => Game.UI.GameView.AppendLine("Your target is {0}", ToName(_Target = value)); }
         public PlayerState[] Players { get; protected set; } = new PlayerState[15];
-        public Role[] Roles { get; protected set; } = new Role[0];
+        public Role[] Roles { get => _Roles; set { _Roles = value; Game.UI.RedrawView(Game.UI.RoleListView); } }
         public List<PlayerState> Team { get; set; } = new List<PlayerState>();
         public List<PlayerState> Graveyard { get; set; } = new List<PlayerState>();
         public int Day
@@ -76,6 +76,7 @@ namespace ToSTextClient
         
         protected Role _Role;
         protected Player _Target;
+        protected Role[] _Roles;
         protected int _Day;
         protected int _Night;
         protected bool _Host;
@@ -90,16 +91,16 @@ namespace ToSTextClient
             GameMode = gameMode;
             PopulatePlayers();
             Host = host;
+            _Roles = new Role[0];
         }
 
         public void OnStart(int playerCount)
         {
             Started = true;
             Players = new PlayerState[playerCount];
-            Roles = new Role[playerCount];
             PopulatePlayers();
             HostID = null;
-            Game.UI.CommandContext = CommandContext.GAME | CommandContext.PICK_NAMES;
+            Game.UI.CommandContext = CommandContext.AUTHENTICATED | CommandContext.GAME | CommandContext.PICK_NAMES;
             Game.UI.RedrawSideViews();
             Game.UI.GameView.AppendLine(("Please choose a name (or wait to get a random name)", ConsoleColor.Green, ConsoleColor.Black));
             Game.Timer = 25;
@@ -137,7 +138,6 @@ namespace ToSTextClient
             Roles.CopyTo(newRoles, 0);
             newRoles[Roles.Length] = role;
             Roles = newRoles;
-            Game.UI.RedrawView(Game.UI.RoleListView);
         }
 
         public void RemoveRole(byte index)
@@ -149,7 +149,6 @@ namespace ToSTextClient
                 newRoles[cpi < index ? cpi : cpi - 1] = Roles[cpi];
             }
             Roles = newRoles;
-            Game.UI.RedrawView(Game.UI.RoleListView);
         }
 
         public string ToName(Player playerID, bool inList = false)
@@ -173,7 +172,7 @@ namespace ToSTextClient
         public string ToName(PlayerState playerState, bool inList = false)
         {
             if (playerState.Role == null) return ToName(playerState.Self, inList);
-            return string.Format("{0} ({1})", ToName(playerState.Self, inList), playerState.Role?.ToString()?.ToDisplayName());
+            return string.Format("{0} ({1})", ToName(playerState.Self, inList), playerState.Youngest ? "Youngest" : playerState.Role?.ToString()?.ToDisplayName());
         }
 
         public bool TryParsePlayer(string[] args, ref int index, out Player player, bool allowNone = true)
@@ -281,6 +280,7 @@ namespace ToSTextClient
                 game.Game.UI.OpenSideView(game.Game.UI.LastWillView);
             }
         }
+        public bool Youngest { get => _Youngest && !_Dead; set { if (_Youngest = value) game.Game.UI.GameView.AppendLine("{0} is now the youngest vampire", game.ToName(Self)); game.Game.UI.RedrawView(game.Game.UI.TeamView, game.Game.UI.GraveyardView); } }
 
         private GameState game;
         private string _Name;
@@ -289,6 +289,7 @@ namespace ToSTextClient
         private bool _Left;
         private string _LastWill;
         private string _DeathNote;
+        private bool _Youngest;
 
         public PlayerState(GameState parent, Player self)
         {
