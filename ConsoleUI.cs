@@ -90,9 +90,9 @@ namespace ToSTextClient
             RegisterView(GraveyardView = new ListView<PlayerState>(" # Graveyard", () => Game.GameState.Graveyard, ps => Game.GameState.ToName(ps, true), CommandExtensions.IsInGame, 40), "graveyard", "graveyard");
             RegisterView(TeamView = new ListView<PlayerState>(" # Team", () => Game.GameState.Team, ps => !ps.Dead || ps.Role == Role.DISGUISER ? Game.GameState.ToName(ps, true) : "", CommandExtensions.IsInGame, 40), "team");
             RegisterView(LastWillView = new WillView(this), "LW/DN", "lw", "dn", "lastwill", "deathnote");
-            myLastWillView = new EditableWillView(this, " # My Last Will", lw => Game.GameState.LastWill = lw);
-            myDeathNoteView = new EditableWillView(this, " # My Death Note", dn => Game.GameState.DeathNote = dn);
-            myForgedWillView = new EditableWillView(this, " # My Forged Will", fw => Game.GameState.ForgedWill = fw);
+            myLastWillView = new EditableWillView(this, " # My Last Will", lw => Game.GameState.LastWill = lw, ScrollViews);
+            myDeathNoteView = new EditableWillView(this, " # My Death Note", dn => Game.GameState.DeathNote = dn, ScrollViews);
+            myForgedWillView = new EditableWillView(this, " # My Forged Will", fw => Game.GameState.ForgedWill = fw, ScrollViews);
             RegisterView(helpView = new HelpView(commands, () => _CommandContext, () => OpenSideView(helpView), 40, 1), "help", "?", "help");
 
             mainView = (AbstractView)AuthView;
@@ -229,6 +229,8 @@ namespace ToSTextClient
                 inputContext = inputView;
             }
         }
+
+        public void AudioAlert() => Console.Beep();
 
         public void SetMainView(IView iview)
         {
@@ -563,10 +565,10 @@ namespace ToSTextClient
                             RedrawCursor();
                             break;
                         case ConsoleKey.PageUp:
-                            ScrollMainView(-1);
+                            ScrollViews(-1);
                             break;
                         case ConsoleKey.PageDown:
-                            ScrollMainView(1);
+                            ScrollViews(1);
                             break;
                         case ConsoleKey.End:
                             if (inputContext != null)
@@ -689,7 +691,7 @@ namespace ToSTextClient
             }
         }
 
-        protected void ScrollMainView(int lines)
+        protected void ScrollViews(int lines)
         {
             lock (drawLock)
             {
@@ -728,8 +730,6 @@ namespace ToSTextClient
                 ResetCursor();
             }
         }
-
-        public void AudioAlert() => Console.Beep();
     }
 
     abstract class AbstractView : IView
@@ -1010,19 +1010,20 @@ namespace ToSTextClient
         protected int CursorIndex { get; set; }
 
         protected Action<string> save;
+        protected Action<int> scroll;
         protected int cursorX;
         protected int cursorY;
 
-        public EditableWillView(ConsoleUI ui, string title, Action<string> save) : base(CommandExtensions.IsInGame, WillView.WILL_WIDTH, WillView.WILL_HEIGHT + 1)
+        public EditableWillView(ConsoleUI ui, string title, Action<string> save, Action<int> scroll) : base(CommandExtensions.IsInGame, WillView.WILL_WIDTH, WillView.WILL_HEIGHT + 1)
         {
             Title = title;
             this.save = save;
+            this.scroll = scroll;
             ui.OnSetMainView += (_1, _2) => Value.Length = CursorIndex = 0;
         }
 
         public void MoveCursor()
         {
-            Console.CursorTop = lastDrawnTop + 1;
             Console.CursorLeft = lastDrawnLeft;
             lock (Value)
             {
@@ -1034,17 +1035,18 @@ namespace ToSTextClient
                     {
                         if (willIndex <= segment.Length)
                         {
+                            SafeCursorTop(lastDrawnTop + cursorY + 1);
                             Console.CursorLeft = lastDrawnLeft + willIndex;
                             cursorX = willIndex;
                             return;
                         }
                         willIndex -= segment.Length;
                         cursorY++;
-                        Console.CursorTop++;
                     }
                     willIndex--;
                 }
             }
+            SafeCursorTop(lastDrawnTop + 1);
         }
 
         public void Insert(char value) => Value.Insert(CursorIndex++, value);
@@ -1183,6 +1185,21 @@ namespace ToSTextClient
         }
 
         public override int GetFullHeight() => minimumHeight;
+
+        protected void SafeCursorTop(int y)
+        {
+            if (y < 0)
+            {
+                scroll(y);
+                y = 0;
+            }
+            else if (y >= lastHeight)
+            {
+                scroll(y - lastHeight + 1);
+                y = lastHeight - 1;
+            }
+            Console.CursorTop = y;
+        }
 
         protected override int DrawUnsafe(int width, int height, int startLine = 0)
         {
