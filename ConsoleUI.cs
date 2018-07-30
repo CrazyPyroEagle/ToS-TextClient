@@ -58,6 +58,8 @@ namespace ToSTextClient
         }
         public CommandContext CommandContext { get => _CommandContext; set { CommandContext old = _CommandContext; _CommandContext = value; UpdateCommandMode(); if (sideViews.Where(view => view.IsAllowed(old) != view.IsAllowed(value)).Count() > 0) RedrawSideViews(); else RedrawView(helpView); } }
         public bool RunInput { get => _RunInput; set => _RunInput = value; }
+
+        public event Action<IView, IView> OnSetMainView;
         
         protected EditableWillView myLastWillView;
         protected EditableWillView myDeathNoteView;
@@ -82,10 +84,10 @@ namespace ToSTextClient
             RoleListView = new ListView<Role>(" # Role List", () => Game.GameState.Roles, r => r.ToString().ToDisplayName(), (CommandContext.LOBBY | CommandContext.GAME).Any(), 25);
             GraveyardView = new ListView<PlayerState>(" # Graveyard", () => Game.GameState.Graveyard, ps => Game.GameState.ToName(ps, true), CommandContext.GAME.Any(), 40);
             TeamView = new ListView<PlayerState>(" # Team", () => Game.GameState.Team, ps => !ps.Dead || ps.Role == Role.DISGUISER ? Game.GameState.ToName(ps, true) : "", CommandContext.GAME.Any(), 40);
-            LastWillView = new WillView();
-            myLastWillView = new EditableWillView(" # My Last Will", lw => Game.GameState.LastWill = lw);
-            myDeathNoteView = new EditableWillView(" # My Death Note", dn => Game.GameState.DeathNote = dn);
-            myForgedWillView = new EditableWillView(" # My Forged Will", fw => Game.GameState.ForgedWill = fw);
+            LastWillView = new WillView(this);
+            myLastWillView = new EditableWillView(this, " # My Last Will", lw => Game.GameState.LastWill = lw);
+            myDeathNoteView = new EditableWillView(this, " # My Death Note", dn => Game.GameState.DeathNote = dn);
+            myForgedWillView = new EditableWillView(this, " # My Forged Will", fw => Game.GameState.ForgedWill = fw);
             helpView = new HelpView(commands, () => _CommandContext, () => OpenSideView(helpView), 40, 1);
 
             mainView = (AbstractView)AuthView;
@@ -253,6 +255,7 @@ namespace ToSTextClient
                     RedrawMainView();
                     return;
                 }
+                OnSetMainView?.Invoke(mainView, view);
                 SetInputContext(null);
                 mainView = view;
                 sideViews = hiddenSideViews.SafeIndex(view, () => new List<AbstractView>());
@@ -970,7 +973,11 @@ namespace ToSTextClient
         public string Title { get; set; }
         public string Value { get; set; }
 
-        public WillView() : base(CommandContext.GAME.Any(), WILL_WIDTH, WILL_HEIGHT + 1) => Title = Value = "";
+        public WillView(ConsoleUI ui) : base(CommandContext.GAME.Any(), WILL_WIDTH, WILL_HEIGHT + 1)
+        {
+            Title = Value = "";
+            ui.OnSetMainView += (_1, _2) => Title = Value = "";
+        }
 
         public override int GetFullHeight() => minimumHeight;
 
@@ -1015,10 +1022,11 @@ namespace ToSTextClient
         protected int cursorX;
         protected int cursorY;
 
-        public EditableWillView(string title, Action<string> save) : base(CommandContext.GAME.Any(), WillView.WILL_WIDTH, WillView.WILL_HEIGHT + 1)
+        public EditableWillView(ConsoleUI ui, string title, Action<string> save) : base(CommandContext.GAME.Any(), WillView.WILL_WIDTH, WillView.WILL_HEIGHT + 1)
         {
             Title = title;
             this.save = save;
+            ui.OnSetMainView += (_1, _2) => Value.Length = CursorIndex = 0;
         }
 
         public void MoveCursor()

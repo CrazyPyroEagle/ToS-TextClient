@@ -192,7 +192,7 @@ namespace ToSTextClient
                     player = Player.JAILOR;
                     return true;
                 }
-                foreach (PlayerState ps in Players.Where(ps => ps.Name.ToLower() == value))
+                foreach (PlayerState ps in Players.Where(ps => ps.Name?.ToLower() == value))
                 {
                     index += length;
                     player = ps.Self;
@@ -215,7 +215,7 @@ namespace ToSTextClient
                 player = Player.JAILOR;
                 return true;
             }
-            foreach (PlayerState ps in Players.Where(ps => ps.Name.ToLower() == value))
+            foreach (PlayerState ps in Players.Where(ps => ps.Name?.ToLower() == value))
             {
                 player = ps.Self;
                 return true;
