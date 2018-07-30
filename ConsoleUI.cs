@@ -51,6 +51,7 @@ namespace ToSTextClient
         public IListView<PlayerState> GraveyardView { get; protected set; }
         public IListView<PlayerState> TeamView { get; protected set; }
         public IWillView LastWillView { get; protected set; }
+        public IListView<Player> WinnerView { get; protected set; }
         public string StatusLine
         {
             get => _StatusLine;
@@ -90,6 +91,7 @@ namespace ToSTextClient
             RegisterView(GraveyardView = new ListView<PlayerState>(" # Graveyard", () => Game.GameState.Graveyard, ps => Game.GameState.ToName(ps, true), CommandExtensions.IsInGame, 40), "graveyard", "graveyard");
             RegisterView(TeamView = new ListView<PlayerState>(" # Team", () => Game.GameState.Team, ps => !ps.Dead || ps.Role == Role.DISGUISER ? Game.GameState.ToName(ps, true) : "", CommandExtensions.IsInGame, 40), "team");
             RegisterView(LastWillView = new WillView(this), "LW/DN", "lw", "dn", "lastwill", "deathnote");
+            RegisterView(WinnerView = new ListView<Player>(" # Winners", () => Game.GameState.Winners, p => Game.GameState.ToName(p, true), CommandContext.GAME_END.Set(), 25), "winners");
             myLastWillView = new EditableWillView(this, " # My Last Will", lw => Game.GameState.LastWill = lw, ScrollViews);
             myDeathNoteView = new EditableWillView(this, " # My Death Note", dn => Game.GameState.DeathNote = dn, ScrollViews);
             myForgedWillView = new EditableWillView(this, " # My Forged Will", fw => Game.GameState.ForgedWill = fw, ScrollViews);
@@ -884,7 +886,7 @@ namespace ToSTextClient
             ui.RedrawView(this);
         }
 
-        public void ReplaceLine(int index, FormattedString format, params object[] args) => ReplaceLine(index, format.Format(args));
+        public void ReplaceLine(int index, FormattedString format, params object[] args) => ReplaceLine(index, format?.Format(args));
 
         public void Clear()
         {
@@ -900,9 +902,9 @@ namespace ToSTextClient
                 int lineIndex = 0;
                 for (; startLine < Lines.Count && lineIndex < height; startLine++, lineIndex++)
                 {
-                    Console.ForegroundColor = Lines[startLine].Foreground;
-                    Console.BackgroundColor = Lines[startLine].Background;
-                    Console.Write(Lines[startLine].Value.PadRightHard(width));
+                    Console.ForegroundColor = Lines[startLine]?.Foreground ?? ConsoleColor.Gray;
+                    Console.BackgroundColor = Lines[startLine]?.Background ?? ConsoleColor.Black;
+                    Console.Write((Lines[startLine]?.Value ?? "").PadRightHard(width));
                     Console.CursorTop++;
                     Console.CursorLeft = cursorOffset;
                 }
@@ -1502,9 +1504,9 @@ namespace ToSTextClient
             if (++currentLine > startLine)
             {
                 if (lineIndex++ >= height) return lineIndex;
-                Console.ForegroundColor = _Status.Foreground;
-                Console.BackgroundColor = _Status.Background;
-                Console.Write((_Status.Value ?? "").PadRightHard(width));
+                Console.ForegroundColor = _Status?.Foreground ?? ConsoleColor.Gray;
+                Console.BackgroundColor = _Status?.Background ?? ConsoleColor.Black;
+                Console.Write((_Status?.Value ?? "").PadRightHard(width));
                 Console.ResetColor();
                 Console.CursorTop++;
                 Console.CursorLeft = cursorOffset;

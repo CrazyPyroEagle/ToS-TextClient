@@ -215,7 +215,7 @@ namespace ToSTextClient
                 .Register(new Command("Reset your tutorial progress", CommandExtensions.IsAuthenticated, cmd => Parser.SendSystemMessage(SystemCommand.RESET_TUTORIAL_PROGRESS, "\x01")), "resettutorialprogress")
                 .Register(new Command("Reload the promotion data", CommandExtensions.IsAuthenticated, cmd => Parser.SendSystemMessage(SystemCommand.RELOAD_PROMOTION_XML, "\x01")), "reloadpromotionxml")
                 .Register(new Command<string, Promotion>("Grant {1} to {0}", CommandExtensions.IsAuthenticated, ArgumentParsers.Username(UI), ArgumentParsers.ForEnum<Promotion>(UI), (cmd, username, promotion) => Parser.SendSystemMessage(SystemCommand.GRANT_PROMOTION, username, ((byte)promotion).ToString())), "grantpromotion")
-                .Register(new Command<Role>("Set your role to {0}", (CommandContext.LOBBY | CommandContext.PICK_NAMES).Set(), ArgumentParsers.ForEnum<Role>(UI), (cmd, role) => Parser.SendSystemMessage(SystemCommand.SET_ROLE, ((byte)role).ToString())), "setrole")
+                .Register(new Command<Role>("Set your role to {0}", CommandContext.LOBBY.Set().Or(CommandContext.PICK_NAMES.Set()), ArgumentParsers.ForEnum<Role>(UI), (cmd, role) => Parser.SendSystemMessage(SystemCommand.SET_ROLE, ((byte)role).ToString())), "setrole")
                 .Register(new Command<AccountItem>("Grant yourself {0}", CommandExtensions.IsAuthenticated, ArgumentParsers.ForEnum<AccountItem>(UI), (cmd, accountItem) => Parser.SendSystemMessage(SystemCommand.GRANT_ACCOUNT_ITEM, ((byte)accountItem).ToString())), "grantaccountitem")
                 .Register(new Command<string>("Force {0} to change username", CommandExtensions.IsAuthenticated, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.FORCE_NAME_CHANGE, username)), "forcenamechange")
                 .Register(new Command<string>("Grant {0} 5200 Merit Points", CommandExtensions.IsAuthenticated, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_MERIT, username)), "grantmerit")
@@ -351,7 +351,6 @@ namespace ToSTextClient
             MessageParser.NamesAndPositionsOfUsers += (player, name) => GameState.Players[(int)player].Name = name;
             MessageParser.RoleAndPosition += (role, player, target) =>
             {
-                UI.CommandContext = CommandContext.ROLE_SELECTION;
                 GameState.Role = role;
                 GameState.Self = player;
                 target.MatchSome(id => GameState.Target = id);
@@ -468,11 +467,10 @@ namespace ToSTextClient
             MessageParser.MafiaTargeting += (player, role, target, _1, _2, _3) => UI.GameView.AppendLine(target == Player.JAILOR ? "{0} ({1}) has unset their target" : "{0} ({1}) has set their target to {2}", GameState.ToName(player), role.ToString().ToDisplayName(), GameState.ToName(target));
             MessageParser.TellJanitorTargetsRole += role => UI.GameView.AppendLine(("You secretly know that your target's role was {0}", ConsoleColor.Green, ConsoleColor.Black), role.ToString().ToDisplayName());
             MessageParser.TellJanitorTargetsWill += (player, lastWill) => GameState.Players[(int)player].LastWill = lastWill;
-            MessageParser.SomeoneHasWon += (faction, winnersRaw) =>
+            MessageParser.SomeoneHasWon += (faction, winners) =>
             {
-                Player[] winners = winnersRaw.ToArray();
-                UI.GameView.AppendLine((winners.Length > 0 ? "Winning faction: {0} ({1})" : "Winning faction: {0}", ConsoleColor.Green, ConsoleColor.Black), faction.ToString().ToDisplayName(), string.Join(", ", winners.Select(p => GameState.ToName(p))));
-                if (winners.Contains(GameState.Self)) UI.GameView.AppendLine(("You have won", ConsoleColor.Green, ConsoleColor.Black));
+                GameState.WinningFaction = faction;
+                GameState.Winners = winners.ToArray();
             };
             MessageParser.MafiosoPromotedToGodfather += () =>
             {
@@ -541,8 +539,12 @@ namespace ToSTextClient
                         break;
                 }
             };
-            MessageParser.EarnedAchievements161 += achievements => achievements.ForEach(id => UI.GameView.AppendLine(("You have earned the achievement {0}", ConsoleColor.DarkGreen), id.ToString().ToDisplayName()));
-            MessageParser.AuthenticationFailed += (result, timeout) => UI.AuthView.Status = ((FormattedString)(timeout != null ? "Authentication failed: {0} for {1} seconds" : "Authentication failed: {0}", ConsoleColor.DarkRed)).Format(result.ToString().ToDisplayName(), timeout);
+            MessageParser.EarnedAchievements161 += achievements => achievements.ForEach(id =>
+            {
+                EarnedAchievements.Add(id);
+                UI.GameView.AppendLine(("You have earned the achievement {0}", ConsoleColor.DarkGreen), id.ToString().ToDisplayName());
+            });
+            MessageParser.AuthenticationFailed += (result, timeout) => UI.AuthView.Status = (string.Format(timeout != null ? "Authentication failed: {0} for {1} seconds" : "Authentication failed: {0}", result.ToString().ToDisplayName(), timeout), ConsoleColor.DarkRed);
             MessageParser.SpyNightAbilityMessage += (isCoven, player) => UI.GameView.AppendLine(("A member of the {0} visited {1}", ConsoleColor.Green, ConsoleColor.Black), isCoven ? "Coven" : "Mafia", GameState.ToName(player));
             MessageParser.OneDayBeforeStalemate += () => UI.GameView.AppendLine(("If noone dies by tomorrow, the game will end in a draw", ConsoleColor.Green, ConsoleColor.Black));
             // Add missing cases here

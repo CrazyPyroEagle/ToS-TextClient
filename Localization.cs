@@ -29,7 +29,7 @@ namespace ToSTextClient
 
         public FormattedString Of(ModeratorMessage value) => Get(mod, ((byte)(value + 1)).ToString()) ?? value.ToString().ToDisplayName();
 
-        protected FormattedString? Get(XDocument doc, string id)
+        protected FormattedString Get(XDocument doc, string id)
         {
             XElement element = doc.Element("Entries").Elements("Entry").Where(entry => entry.Element("id").Value == id).FirstOrDefault();
             return element == null ? null : EncodeColor(element.Element("Text").Value, element.Element("Color").Value);

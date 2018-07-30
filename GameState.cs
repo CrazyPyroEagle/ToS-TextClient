@@ -14,7 +14,7 @@ namespace ToSTextClient
         public Role Role
         {
             get => _Role;
-            set { Game.UI.CommandContext &= ~CommandContext.PICK_NAMES; Game.UI.GameView.AppendLine("Your role is {0}", (_Role = value).ToString().ToDisplayName()); }
+            set { Game.UI.CommandContext = CommandContext.ROLE_SELECTION; Game.UI.GameView.AppendLine("Your role is {0}", (_Role = value).ToString().ToDisplayName()); }
         }
         public Player Self { get; set; }
         public Player Target { get => _Target; set => Game.UI.GameView.AppendLine("Your target is {0}", ToName(_Target = value)); }
@@ -77,6 +77,8 @@ namespace ToSTextClient
         }
         public DayState DayState { get; set; }
         public NightState NightState { get; set; }
+        public Faction WinningFaction { get => _WinningFaction; set => Game.UI.GameView.AppendLine((string.Format("Winning faction: {0}", (_WinningFaction = value).ToString().ToDisplayName()), ConsoleColor.Green, ConsoleColor.Black)); }
+        public Player[] Winners { get => _Winners; set { _Winners = value; Game.UI.CommandContext = CommandContext.GAME_END; Game.UI.OpenSideView(Game.UI.WinnerView); if (value.Contains(Self)) Game.UI.GameView.AppendLine(("You have won", ConsoleColor.Green, ConsoleColor.Black)); } }
         
         protected Role _Role;
         protected Player _Target;
@@ -88,6 +90,8 @@ namespace ToSTextClient
         protected string _LastWill = "";
         protected string _DeathNote = "";
         protected string _ForgedWill = "";
+        protected Faction _WinningFaction = Faction.DRAW;
+        protected Player[] _Winners = Array.Empty<Player>();
 
         public GameState(TextClient game, GameMode gameMode, bool host)
         {

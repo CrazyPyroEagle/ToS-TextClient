@@ -9,13 +9,14 @@ namespace ToSTextClient
         IExceptionView ExceptionView { get; }
         IAuthView AuthView { get; }
         ITextView HomeView { get; }
-        IListView<GameMode> GameModeView { get; }
         ITextView GameView { get; }
+        IListView<GameMode> GameModeView { get; }
         IListView<PlayerState> PlayerListView { get; }
         IListView<Role> RoleListView { get; }
         IListView<PlayerState> GraveyardView { get; }
         IListView<PlayerState> TeamView { get; }
         IWillView LastWillView { get; }
+        IListView<Player> WinnerView { get; }
         string StatusLine { get; set; }
         CommandContext CommandContext { get; set; }
         bool RunInput { get; set; }
@@ -78,7 +79,7 @@ namespace ToSTextClient
         FormattedString Status { get; set; }
     }
 
-    struct FormattedString
+    class FormattedString
     {
         public string Value { get; }
         public ConsoleColor Foreground { get; }

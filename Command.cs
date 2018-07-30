@@ -256,6 +256,7 @@ namespace ToSTextClient
         DISCUSSION,
         VOTING,
         JUDGEMENT,
+        GAME_END,
         POST_GAME
     }
 
@@ -278,6 +279,7 @@ namespace ToSTextClient
                 case CommandContext.DISCUSSION:
                 case CommandContext.VOTING:
                 case CommandContext.JUDGEMENT:
+                case CommandContext.GAME_END:
                     return true;
                 default:
                     return false;
@@ -292,6 +294,7 @@ namespace ToSTextClient
                 case CommandContext.DISCUSSION:
                 case CommandContext.VOTING:
                 case CommandContext.JUDGEMENT:
+                case CommandContext.GAME_END:
                     return true;
                 default:
                     return false;
