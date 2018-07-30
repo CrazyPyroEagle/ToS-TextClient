@@ -27,7 +27,8 @@ namespace ToSTextClient
             get => _Day;
             set
             {
-                Game.UI.CommandContext = (Game.UI.CommandContext & ~CommandContext.NIGHT) | CommandContext.DAY;
+                NightState = NightState.NONE;
+                Game.UI.CommandContext = CommandContext.DAY;
                 Game.UI.GameView.AppendLine(("Day {0}", ConsoleColor.Black, ConsoleColor.White), _Day = value);
                 if (value == 1)
                 {
@@ -41,7 +42,8 @@ namespace ToSTextClient
             get => _Night;
             set
             {
-                Game.UI.CommandContext = (Game.UI.CommandContext & ~CommandContext.DAY) | CommandContext.NIGHT;
+                DayState = DayState.NONE;
+                Game.UI.CommandContext = CommandContext.NIGHT;
                 Game.UI.GameView.AppendLine(("Night {0}", ConsoleColor.Black, ConsoleColor.White), _Night = value);
                 Game.Timer = GameMode == GameMode.RAPID_MODE ? 15 : 30;
                 Game.TimerText = "Night";
@@ -51,7 +53,7 @@ namespace ToSTextClient
         public bool Host
         {
             get => _Host;
-            set { if (_Host != value) { Game.UI.SetCommandContext(CommandContext.HOST, _Host = value); Game.UI.GameView.AppendLine(((_Host = value) ? "You are now host" : "You are no longer host", ConsoleColor.Green, ConsoleColor.Black)); } }
+            set { if (_Host != value) { Game.UI.GameView.AppendLine(((_Host = value) ? "You are now host" : "You are no longer host", ConsoleColor.Green, ConsoleColor.Black)); } }
         }
         public Player? HostID
         {
@@ -73,6 +75,8 @@ namespace ToSTextClient
             get => _ForgedWill;
             set { Game.Parser.SaveForgedWill(_ForgedWill = value); }
         }
+        public DayState DayState { get; set; }
+        public NightState NightState { get; set; }
         
         protected Role _Role;
         protected Player _Target;
@@ -100,7 +104,7 @@ namespace ToSTextClient
             Players = new PlayerState[playerCount];
             PopulatePlayers();
             HostID = null;
-            Game.UI.CommandContext = CommandContext.AUTHENTICATED | CommandContext.GAME | CommandContext.PICK_NAMES;
+            Game.UI.CommandContext = CommandContext.PICK_NAMES;
             Game.UI.RedrawSideViews();
             Game.UI.GameView.AppendLine(("Please choose a name (or wait to get a random name)", ConsoleColor.Green, ConsoleColor.Black));
             Game.Timer = 25;
@@ -296,5 +300,21 @@ namespace ToSTextClient
             game = parent;
             Self = self;
         }
+    }
+
+    [Flags]
+    enum DayState
+    {
+        NONE,
+        BLACKMAILED
+    }
+
+    [Flags]
+    enum NightState
+    {
+        NONE,
+        JAILED,
+        DUEL_ATTACKING = JAILED << 1,
+        DUEL_DEFENDING = DUEL_ATTACKING << 1
     }
 }

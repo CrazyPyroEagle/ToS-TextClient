@@ -82,13 +82,13 @@ namespace ToSTextClient
 
             ExceptionView = new ExceptionView(60, 10);
             AuthView = new AuthView(this, game => Game = game);
-            HomeView = new TextView(this, UpdateView, CommandContext.HOME.Any(), 60, 2);
-            GameView = new TextView(this, UpdateView, (CommandContext.LOBBY | CommandContext.GAME).Any(), 60, 20);
-            RegisterView(GameModeView = new ListView<GameMode>(" # Game Modes", () => Game.ActiveGameModes.Where(gm => Game.OwnsCoven || !gm.RequiresCoven()).ToList(), gm => gm.ToString().ToDisplayName(), CommandContext.HOME.Any(), 25), "game modes", "modes");
-            RegisterView(PlayerListView = new ListView<PlayerState>(" # Players", () => Game.GameState.Players, p => p.Dead ? "" : Game.GameState.ToName(p.Self, true), (CommandContext.LOBBY | CommandContext.GAME).Any(), 25), "player list", "players", "playerlist");
-            RegisterView(RoleListView = new ListView<Role>(" # Role List", () => Game.GameState.Roles, r => r.ToString().ToDisplayName(), (CommandContext.LOBBY | CommandContext.GAME).Any(), 25), "role list", "roles", "rolelist");
-            RegisterView(GraveyardView = new ListView<PlayerState>(" # Graveyard", () => Game.GameState.Graveyard, ps => Game.GameState.ToName(ps, true), CommandContext.GAME.Any(), 40), "graveyard", "graveyard");
-            RegisterView(TeamView = new ListView<PlayerState>(" # Team", () => Game.GameState.Team, ps => !ps.Dead || ps.Role == Role.DISGUISER ? Game.GameState.ToName(ps, true) : "", CommandContext.GAME.Any(), 40), "team");
+            HomeView = new TextView(this, UpdateView, CommandContext.HOME.Set(), 60, 2);
+            GameView = new TextView(this, UpdateView, CommandExtensions.IsInLobbyOrGame, 60, 20);
+            RegisterView(GameModeView = new ListView<GameMode>(" # Game Modes", () => Game.ActiveGameModes.Where(gm => Game.OwnsCoven || !gm.RequiresCoven()).ToList(), gm => gm.ToString().ToDisplayName(), CommandContext.HOME.Set(), 25), "game modes", "modes");
+            RegisterView(PlayerListView = new ListView<PlayerState>(" # Players", () => Game.GameState.Players, p => p.Dead ? "" : Game.GameState.ToName(p.Self, true), CommandExtensions.IsInLobbyOrGame, 25), "player list", "players", "playerlist");
+            RegisterView(RoleListView = new ListView<Role>(" # Role List", () => Game.GameState.Roles, r => r.ToString().ToDisplayName(), CommandExtensions.IsInLobbyOrGame, 25), "role list", "roles", "rolelist");
+            RegisterView(GraveyardView = new ListView<PlayerState>(" # Graveyard", () => Game.GameState.Graveyard, ps => Game.GameState.ToName(ps, true), CommandExtensions.IsInGame, 40), "graveyard", "graveyard");
+            RegisterView(TeamView = new ListView<PlayerState>(" # Team", () => Game.GameState.Team, ps => !ps.Dead || ps.Role == Role.DISGUISER ? Game.GameState.ToName(ps, true) : "", CommandExtensions.IsInGame, 40), "team");
             RegisterView(LastWillView = new WillView(this), "LW/DN", "lw", "dn", "lastwill", "deathnote");
             myLastWillView = new EditableWillView(this, " # My Last Will", lw => Game.GameState.LastWill = lw);
             myDeathNoteView = new EditableWillView(this, " # My Death Note", dn => Game.GameState.DeathNote = dn);
@@ -111,7 +111,7 @@ namespace ToSTextClient
             inputContext = AuthView;
 
             RegisterCommand(helpCommand, "help", "?");
-            RegisterCommand(new Command("Open the login view", CommandContext.AUTHENTICATING.Any(), cmd =>
+            RegisterCommand(new Command("Open the login view", CommandContext.AUTHENTICATING.Set(), cmd =>
             {
                 SetMainView(AuthView);
                 SetInputContext(AuthView);
@@ -119,7 +119,7 @@ namespace ToSTextClient
             RegisterCommand(openCommand, "open");
             RegisterCommand(closeCommand, "close");
             RegisterCommand(new Command("Redraw the whole screen", activeContext => true, cmd => RedrawAll()), "redraw");
-            RegisterCommand(new Command<Option<Player>>("Edit your LW or view {0}'s", CommandContext.GAME.Any(), ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
+            RegisterCommand(new Command<Option<Player>>("Edit your LW or view {0}'s", CommandExtensions.IsInGame, ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
             {
                 opTarget.Match(target =>
                 {
@@ -138,7 +138,7 @@ namespace ToSTextClient
                     RedrawCursor();
                 });
             }), "lw", "lastwill");
-            RegisterCommand(new Command<Option<Player>>("Edit your DN or view {0}'s", CommandContext.GAME.Any(), ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
+            RegisterCommand(new Command<Option<Player>>("Edit your DN or view {0}'s", CommandExtensions.IsInGame, ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
             {
                 opTarget.Match(target =>
                 {
@@ -157,13 +157,13 @@ namespace ToSTextClient
                     RedrawCursor();
                 });
             }), "dn", "deathnote");
-            RegisterCommand(new Command("Edit your forged will", CommandContext.GAME.Any(), cmd =>
+            RegisterCommand(new Command("Edit your forged will", context => CommandExtensions.IsInGame(context) && GameState.Role == Role.FORGER, cmd =>
             {
                 OpenSideView(myForgedWillView);
                 inputContext = myForgedWillView;
                 RedrawCursor();
             }), "fw", "forgedwill");
-            RegisterCommand(new Command("Say your will in chat", CommandContext.GAME.Any(), cmd => Game.Parser.SendChatBoxMessage(Game.GameState.LastWill)), "slw", "saylw", "saylastwill");
+            RegisterCommand(new Command("Say your will in chat", CommandExtensions.IsInGame, cmd => Game.Parser.SendChatBoxMessage(Game.GameState.LastWill)), "slw", "saylw", "saylastwill");
         }
 
         public void Run()
@@ -219,12 +219,6 @@ namespace ToSTextClient
             helpCommand.Register(new Command(command.Description, command.IsAllowed, cmd => helpView.Topic = (command, names)), names);
             foreach (ArgumentParser parser in command.Parsers) helpCommand.Register(new Command(parser.Description, activeContext => true, cmd => helpView.Topic = (parser, parser.HelpNames)), parser.HelpNames);
             RedrawView(helpView);
-        }
-
-        public void SetCommandContext(CommandContext context, bool value)
-        {
-            if (value) CommandContext |= context;
-            else CommandContext &= ~context;
         }
 
         public void SetInputContext(IInputView inputView)
@@ -472,7 +466,7 @@ namespace ToSTextClient
         protected void UpdateCommandMode()
         {
             bool oldCommandMode = commandMode;
-            if (CommandContext.HasFlag(CommandContext.AUTHENTICATING) || CommandContext.HasFlag(CommandContext.HOME)) commandMode = true;
+            if (CommandContext == CommandContext.AUTHENTICATING || CommandContext == CommandContext.HOME) commandMode = true;
             else if (bufferIndex == 0) commandMode = false;
             if (commandMode != oldCommandMode) RedrawCursor();
         }
@@ -481,7 +475,7 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
-                commandMode = CommandContext.HasFlag(CommandContext.AUTHENTICATING) || CommandContext.HasFlag(CommandContext.HOME);
+                commandMode = CommandContext == CommandContext.AUTHENTICATING || CommandContext == CommandContext.HOME;
                 inputBuffer.Clear();
                 bufferIndex = 0;
                 RedrawCursor();
@@ -970,7 +964,7 @@ namespace ToSTextClient
         public string Title { get; set; }
         public string Value { get; set; }
 
-        public WillView(ConsoleUI ui) : base(CommandContext.GAME.Any(), WILL_WIDTH, WILL_HEIGHT + 1)
+        public WillView(ConsoleUI ui) : base(CommandExtensions.IsInGame, WILL_WIDTH, WILL_HEIGHT + 1)
         {
             Title = Value = "";
             ui.OnSetMainView += (_1, _2) => Title = Value = "";
@@ -1019,7 +1013,7 @@ namespace ToSTextClient
         protected int cursorX;
         protected int cursorY;
 
-        public EditableWillView(ConsoleUI ui, string title, Action<string> save) : base(CommandContext.GAME.Any(), WillView.WILL_WIDTH, WillView.WILL_HEIGHT + 1)
+        public EditableWillView(ConsoleUI ui, string title, Action<string> save) : base(CommandExtensions.IsInGame, WillView.WILL_WIDTH, WillView.WILL_HEIGHT + 1)
         {
             Title = title;
             this.save = save;
@@ -1322,7 +1316,7 @@ namespace ToSTextClient
         protected int lineIndex;
         protected FormattedString _Status;
 
-        public AuthView(ConsoleUI ui, Action<TextClient> setGame) : base(CommandContext.AUTHENTICATING.Any(), 30, 3)
+        public AuthView(ConsoleUI ui, Action<TextClient> setGame) : base(CommandContext.AUTHENTICATING.Set(), 30, 3)
         {
             this.ui = ui;
             this.setGame = setGame;

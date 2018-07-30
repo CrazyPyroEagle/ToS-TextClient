@@ -28,7 +28,6 @@ namespace ToSTextClient
         void RedrawMainView();
         void RedrawSideViews();
         void RegisterCommand(Command command, params string[] names);
-        void SetCommandContext(CommandContext context, bool value);
         void SetInputContext(IInputView view);
         void AudioAlert();
         void Run();

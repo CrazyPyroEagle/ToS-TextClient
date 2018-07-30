@@ -143,8 +143,7 @@ namespace ToSTextClient
         public CommandGroup Register(Command cmd, params string[] names)
         {
             foreach (string name in names) commands[name] = cmd;
-            Func<CommandContext, bool> oldIsAllowed = isAllowed;
-            isAllowed = activeContext => oldIsAllowed(activeContext) || cmd.IsAllowed(activeContext);
+            isAllowed = isAllowed.Or(cmd.IsAllowed);
             return this;
         }
     }
@@ -244,24 +243,59 @@ namespace ToSTextClient
 
         private static IEnumerable<string> GetEnumValueDocs<Type>() => Enum.GetNames(typeof(Type)).Select(n => string.Format("({0}) {1}", Enum.Format(typeof(Type), Enum.Parse(typeof(Type), n), "d"), n.ToDisplayName()));
     }
-
-    [Flags]
+    
     public enum CommandContext
     {
-        NONE,
         AUTHENTICATING,
-        AUTHENTICATED = AUTHENTICATING << 1,
-        HOME = AUTHENTICATED << 1,
-        LOBBY = HOME << 1,
-        HOST = LOBBY << 1,
-        GAME = HOST << 1,
-        PICK_NAMES = GAME << 1,
-        NIGHT = PICK_NAMES << 1,
-        DAY = NIGHT << 1,
-        VOTING = DAY << 1,
-        JUDGEMENT = VOTING << 1,
-        POST_GAME = JUDGEMENT << 1,
-        DUEL_DEFENDING = POST_GAME << 1,
-        DUEL_ATTACKING = POST_GAME << 1
+        HOME,
+        LOBBY,
+        PICK_NAMES,
+        ROLE_SELECTION,
+        NIGHT,
+        DAY,
+        DISCUSSION,
+        VOTING,
+        JUDGEMENT,
+        POST_GAME
+    }
+
+    public static class CommandExtensions
+    {
+        public static Func<CommandContext, bool> Set(this CommandContext value) => context => context == value;
+
+        public static bool IsAuthenticated(this CommandContext context) => context != CommandContext.AUTHENTICATING;
+
+        public static bool IsInLobbyOrGame(this CommandContext context) => context.IsInGame() || context == CommandContext.LOBBY;
+
+        public static bool IsInGame(this CommandContext context)
+        {
+            switch (context)
+            {
+                case CommandContext.PICK_NAMES:
+                case CommandContext.ROLE_SELECTION:
+                case CommandContext.NIGHT:
+                case CommandContext.DAY:
+                case CommandContext.DISCUSSION:
+                case CommandContext.VOTING:
+                case CommandContext.JUDGEMENT:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        public static bool IsDay(this CommandContext context)
+        {
+            switch (context)
+            {
+                case CommandContext.DAY:
+                case CommandContext.DISCUSSION:
+                case CommandContext.VOTING:
+                case CommandContext.JUDGEMENT:
+                    return true;
+                default:
+                    return false;
+            }
+        }
     }
 }

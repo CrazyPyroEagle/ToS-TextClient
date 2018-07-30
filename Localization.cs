@@ -23,25 +23,16 @@ namespace ToSTextClient
             mod = LoadResource("Mod.xml");
         }
 
-        public FormattedString Of(LocalizationTable value)
-        {
-            string id = ((byte)value).ToString();
-            XElement element = game.Element("Entries").Elements("Entry").Where(entry => entry.Element("id").Value == id).FirstOrDefault();
-            return element == null ? value.ToString().ToDisplayName() : EncodeColor(element.Element("Text").Value, element.Element("Color").Value);
-        }
+        public FormattedString Of(LocalizationTable value) => Get(game, ((byte)value).ToString()) ?? value.ToString().ToDisplayName();
 
-        public FormattedString OfSpyResult(LocalizationTable value)
-        {
-            string id = string.Format("SpyResult_{0}", (byte)value);
-            XElement element = game.Element("Entries").Elements("Entry").Where(entry => entry.Element("id").Value == id).FirstOrDefault();
-            return element == null ? string.Format("Spy Result: {0}", Of(value)) : EncodeColor(element.Element("Text").Value, element.Element("Color").Value);
-        }
+        public FormattedString OfSpyResult(LocalizationTable value) => Get(game, string.Format("SpyResult_{0}", (byte)value)) ?? string.Format("Spy Result: {0}", Of(value));
 
-        public FormattedString Of(ModeratorMessage value)
+        public FormattedString Of(ModeratorMessage value) => Get(mod, ((byte)(value + 1)).ToString()) ?? value.ToString().ToDisplayName();
+
+        protected FormattedString? Get(XDocument doc, string id)
         {
-            string id = ((byte)(value + 1)).ToString();
-            XElement element = mod.Element("Entries").Elements("Entry").Where(entry => entry.Element("id").Value == id).FirstOrDefault();
-            return element == null ? value.ToString().ToDisplayName() : EncodeColor(element.Element("Text").Value, element.Element("Color").Value);
+            XElement element = doc.Element("Entries").Elements("Entry").Where(entry => entry.Element("id").Value == id).FirstOrDefault();
+            return element == null ? null : EncodeColor(element.Element("Text").Value, element.Element("Color").Value);
         }
 
         protected FormattedString EncodeColor(string message, string rawColor)
