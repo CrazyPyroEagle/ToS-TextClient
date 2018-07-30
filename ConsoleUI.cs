@@ -66,6 +66,8 @@ namespace ToSTextClient
         protected EditableWillView myForgedWillView;
         protected HelpView helpView;
         protected CommandGroup helpCommand;
+        protected CommandGroup openCommand;
+        protected CommandGroup closeCommand;
 
         public ConsoleUI()
         {
@@ -74,21 +76,24 @@ namespace ToSTextClient
             inputHistory = new List<(bool cmdMode, string input)>();
             commandMode = true;
             commands = new Dictionary<string, Command>();
+            helpCommand = new CommandGroup("View a list of available commands", this, "Topic", "Topics", cmd => helpView.Topic = null, activeContext => true);
+            openCommand = new CommandGroup("Open the {0} view", this, "View", "Views");
+            closeCommand = new CommandGroup("Close the {0} view", this, "View", "Views");
 
             ExceptionView = new ExceptionView(60, 10);
             AuthView = new AuthView(this, game => Game = game);
             HomeView = new TextView(this, UpdateView, CommandContext.HOME.Any(), 60, 2);
-            GameModeView = new ListView<GameMode>(" # Game Modes", () => Game.ActiveGameModes.Where(gm => Game.OwnsCoven || !gm.RequiresCoven()).ToList(), gm => gm.ToString().ToDisplayName(), CommandContext.HOME.Any(), 25);
             GameView = new TextView(this, UpdateView, (CommandContext.LOBBY | CommandContext.GAME).Any(), 60, 20);
-            PlayerListView = new ListView<PlayerState>(" # Players", () => Game.GameState.Players, p => p.Dead ? "" : Game.GameState.ToName(p.Self, true), (CommandContext.LOBBY | CommandContext.GAME).Any(), 25);
-            RoleListView = new ListView<Role>(" # Role List", () => Game.GameState.Roles, r => r.ToString().ToDisplayName(), (CommandContext.LOBBY | CommandContext.GAME).Any(), 25);
-            GraveyardView = new ListView<PlayerState>(" # Graveyard", () => Game.GameState.Graveyard, ps => Game.GameState.ToName(ps, true), CommandContext.GAME.Any(), 40);
-            TeamView = new ListView<PlayerState>(" # Team", () => Game.GameState.Team, ps => !ps.Dead || ps.Role == Role.DISGUISER ? Game.GameState.ToName(ps, true) : "", CommandContext.GAME.Any(), 40);
-            LastWillView = new WillView(this);
+            RegisterView(GameModeView = new ListView<GameMode>(" # Game Modes", () => Game.ActiveGameModes.Where(gm => Game.OwnsCoven || !gm.RequiresCoven()).ToList(), gm => gm.ToString().ToDisplayName(), CommandContext.HOME.Any(), 25), "game modes", "modes");
+            RegisterView(PlayerListView = new ListView<PlayerState>(" # Players", () => Game.GameState.Players, p => p.Dead ? "" : Game.GameState.ToName(p.Self, true), (CommandContext.LOBBY | CommandContext.GAME).Any(), 25), "player list", "players", "playerlist");
+            RegisterView(RoleListView = new ListView<Role>(" # Role List", () => Game.GameState.Roles, r => r.ToString().ToDisplayName(), (CommandContext.LOBBY | CommandContext.GAME).Any(), 25), "role list", "roles", "rolelist");
+            RegisterView(GraveyardView = new ListView<PlayerState>(" # Graveyard", () => Game.GameState.Graveyard, ps => Game.GameState.ToName(ps, true), CommandContext.GAME.Any(), 40), "graveyard", "graveyard");
+            RegisterView(TeamView = new ListView<PlayerState>(" # Team", () => Game.GameState.Team, ps => !ps.Dead || ps.Role == Role.DISGUISER ? Game.GameState.ToName(ps, true) : "", CommandContext.GAME.Any(), 40), "team");
+            RegisterView(LastWillView = new WillView(this), "LW/DN", "lw", "dn", "lastwill", "deathnote");
             myLastWillView = new EditableWillView(this, " # My Last Will", lw => Game.GameState.LastWill = lw);
             myDeathNoteView = new EditableWillView(this, " # My Death Note", dn => Game.GameState.DeathNote = dn);
             myForgedWillView = new EditableWillView(this, " # My Forged Will", fw => Game.GameState.ForgedWill = fw);
-            helpView = new HelpView(commands, () => _CommandContext, () => OpenSideView(helpView), 40, 1);
+            RegisterView(helpView = new HelpView(commands, () => _CommandContext, () => OpenSideView(helpView), 40, 1), "help", "?", "help");
 
             mainView = (AbstractView)AuthView;
             sideViews = new List<AbstractView>();
@@ -105,28 +110,14 @@ namespace ToSTextClient
             };
             inputContext = AuthView;
 
-            RegisterCommand(helpCommand = new CommandGroup("View a list of available commands", this, "Topic", "Topics", cmd => helpView.Topic = null, activeContext => true), "help", "?");
+            RegisterCommand(helpCommand, "help", "?");
             RegisterCommand(new Command("Open the login view", CommandContext.AUTHENTICATING.Any(), cmd =>
             {
                 SetMainView(AuthView);
                 SetInputContext(AuthView);
             }), "login", "auth", "authenticate");
-            RegisterCommand(new CommandGroup("Open the {0} view", this, "View", "Views")
-                .Register(new Command("Open the help view", helpView.IsAllowed, cmd => OpenSideView(helpView)), "help")
-                .Register(new Command("Open the game modes view", GameModeView.IsAllowed, cmd => OpenSideView(GameModeView)), "modes")
-                .Register(new Command("Open the role list view", RoleListView.IsAllowed, cmd => OpenSideView(RoleListView)), "roles", "rolelist")
-                .Register(new Command("Open the player list view", PlayerListView.IsAllowed, cmd => OpenSideView(PlayerListView)), "players", "playerlist")
-                .Register(new Command("Open the graveyard view", GraveyardView.IsAllowed, cmd => OpenSideView(GraveyardView)), "graveyard")
-                .Register(new Command("Open the team view", TeamView.IsAllowed, cmd => OpenSideView(TeamView)), "team")
-                .Register(new Command("Open the LW/DN view", LastWillView.IsAllowed, cmd => OpenSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "open");
-            RegisterCommand(new CommandGroup("Close the {0} view", this, "View", "Views")
-                .Register(new Command("Close the help view", helpView.IsAllowed, cmd => CloseSideView(helpView)), "help")
-                .Register(new Command("Close the game modes view", GameModeView.IsAllowed, cmd => CloseSideView(GameModeView)), "modes")
-                .Register(new Command("Close the role list view", RoleListView.IsAllowed, cmd => CloseSideView(RoleListView)), "roles", "rolelist")
-                .Register(new Command("Close the player list view", PlayerListView.IsAllowed, cmd => CloseSideView(PlayerListView)), "players", "playerlist")
-                .Register(new Command("Close the graveyard view", GraveyardView.IsAllowed, cmd => CloseSideView(GraveyardView)), "graveyard")
-                .Register(new Command("Close the team view", TeamView.IsAllowed, cmd => CloseSideView(TeamView)), "team")
-                .Register(new Command("Close the LW/DN view", LastWillView.IsAllowed, cmd => CloseSideView(LastWillView)), "lw", "dn", "lastwill", "deathnote"), "close");
+            RegisterCommand(openCommand, "open");
+            RegisterCommand(closeCommand, "close");
             RegisterCommand(new Command("Redraw the whole screen", activeContext => true, cmd => RedrawAll()), "redraw");
             RegisterCommand(new Command<Option<Player>>("Edit your LW or view {0}'s", CommandContext.GAME.Any(), ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
             {
@@ -470,6 +461,12 @@ namespace ToSTextClient
             Console.CursorTop = fullHeight - 1;
             Console.CursorLeft = bufferIndex + 2;
             Console.CursorVisible = true;
+        }
+
+        protected void RegisterView(IView view, string displayName, params string[] names)
+        {
+            openCommand.Register(new Command(string.Format("Open the {0} view", displayName), view.IsAllowed, cmd => OpenSideView(view)), names);
+            closeCommand.Register(new Command(string.Format("Close the {0} view", displayName), view.IsAllowed, cmd => CloseSideView(view)), names);
         }
 
         protected void UpdateCommandMode()
