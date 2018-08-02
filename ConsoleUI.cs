@@ -165,7 +165,7 @@ namespace ToSTextClient
                 inputContext = myForgedWillView;
                 RedrawCursor();
             }), "fw", "forgedwill");
-            RegisterCommand(new Command("Say your will in chat", CommandExtensions.IsInGame, cmd => Game.Parser.SendChatBoxMessage(Game.GameState.LastWill)), "slw", "saylw", "saylastwill");
+            RegisterCommand(new Command<Option<Player>>("Say your will or whisper it to {0}", CommandExtensions.IsInGame, ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) => opTarget.Match(target => Game.Parser.SendPrivateMessage(target, Game.GameState.LastWill), () => Game.Parser.SendChatBoxMessage(Game.GameState.LastWill))), "slw", "saylw", "saylastwill");
         }
 
         public void Run()
