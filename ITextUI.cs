@@ -20,6 +20,7 @@ namespace ToSTextClient
         string StatusLine { get; set; }
         CommandContext CommandContext { get; set; }
         bool RunInput { get; set; }
+        bool TimerVisible { get; set; }
 
         void SetMainView(IView view);
         void OpenSideView(IView view);
@@ -34,7 +35,10 @@ namespace ToSTextClient
         void Run();
     }
 
-    interface IView : IContextual { }
+    interface IView : IContextual
+    {
+        IView PinnedView { get; }
+    }
 
     interface ITextView : IView
     {

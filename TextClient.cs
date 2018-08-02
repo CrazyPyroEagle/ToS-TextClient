@@ -61,7 +61,7 @@ namespace ToSTextClient
         public int Timer
         {
             get => _Timer;
-            set { if ((_Timer = value) >= 0) UI.RedrawTimer(); }
+            set { if ((_Timer = value) > 0) UI.RedrawTimer(); else UI.TimerVisible = false; }
         }
         public string TimerText
         {
@@ -119,7 +119,7 @@ namespace ToSTextClient
             }), "join");
             UI.RegisterCommand(new Command("Leave the queue", CommandContext.HOME.Set(), cmd => ClientMessageParsers.LeaveRankedQueue(Parser)), "leavequeue");
             UI.RegisterCommand(new Command("Accept the queue popup", CommandContext.HOME.Set(), cmd => Parser.AcceptRanked()), "accept");
-            UI.RegisterCommand(new Command("Exit the game", (CommandContext.AUTHENTICATING | CommandContext.HOME).Set(), cmd => UI.RunInput = false), "quit", "exit");
+            UI.RegisterCommand(new Command("Exit the game", context => true, cmd => UI.RunInput = false), "quit", "exit");
             UI.RegisterCommand(new Command<Language>("Set the lobby language", CommandContext.HOME.Set(), ArgumentParsers.ForEnum<Language>(UI), (cmd, lang) => Parser.UpdateSettings(Setting.SELECTED_QUEUE_LANGUAGE, (byte)lang)), "lang", "language");
             UI.RegisterCommand(new Command("Leave the game", CommandExtensions.IsInLobbyOrGame, cmd => Parser.LeaveGame()), "leave");
             UI.RegisterCommand(new Command("Leave the post-game lobby", CommandContext.POST_GAME.Set(), cmd => Parser.LeavePostGameLobby()), "leavepost");

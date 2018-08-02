@@ -244,7 +244,7 @@ namespace ToSTextClient
         public string Name
         {
             get { return _Name; }
-            set { _Name = value; game.Game.UI.RedrawView(game.Game.UI.PlayerListView); }
+            set { _Name = value; game.Game.UI.RedrawView(game.Game.UI.PlayerListView, game.Game.UI.GameView.PinnedView); }
         }
         public Role? Role
         {

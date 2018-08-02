@@ -16,6 +16,12 @@ namespace ToSTextClient
         protected const string DEFAULT_COMMAND_STATUS = "Type ? for help";
         protected const string EDITING_STATUS = "Editing, press ESC to close";
 
+        public bool TimerVisible
+        {
+            get => _TimerVisible;
+            set { lock (drawLock) { _TimerVisible = value; RedrawPinned(); } }
+        }
+
         protected readonly object drawLock;
 
         protected AbstractView mainView;
@@ -27,6 +33,8 @@ namespace ToSTextClient
         protected int sideHeight;
         protected int fullHeight;
         protected int sideEnd;
+        protected int pinnedHeight;
+        protected bool _TimerVisible;
 
         protected StringBuilder inputBuffer;
         protected int bufferIndex;
@@ -83,8 +91,8 @@ namespace ToSTextClient
 
             ExceptionView = new ExceptionView(60, 10);
             AuthView = new AuthView(this, game => Game = game);
-            HomeView = new TextView(this, UpdateView, CommandContext.HOME.Set(), 60, 2);
-            GameView = new TextView(this, UpdateView, CommandExtensions.IsInLobbyOrGame, 60, 20);
+            HomeView = new TextView(this, UpdateView, CommandContext.HOME.Set(), 60, 2, new UserInfoView(this, 20, 2));
+            GameView = new TextView(this, UpdateView, CommandExtensions.IsInLobbyOrGame, 60, 20, new NameView(this, 23, 1));
             RegisterView(GameModeView = new ListView<GameMode>(" # Game Modes", () => Game.ActiveGameModes.Where(gm => Game.OwnsCoven || !gm.RequiresCoven()).ToList(), gm => gm.ToString().ToDisplayName(), CommandContext.HOME.Set(), 25), "game modes", "modes");
             RegisterView(PlayerListView = new ListView<PlayerState>(" # Players", () => Game.GameState.Players, p => p.Dead ? "" : Game.GameState.ToName(p.Self, true), CommandExtensions.IsInLobbyOrGame, 25), "player list", "players", "playerlist");
             RegisterView(RoleListView = new ListView<Role>(" # Role List", () => Game.GameState.Roles, r => r.ToString().ToDisplayName(), CommandExtensions.IsInLobbyOrGame, 25), "role list", "roles", "rolelist");
@@ -249,8 +257,9 @@ namespace ToSTextClient
                 mainView = view;
                 sideViews = hiddenSideViews.SafeIndex(view, () => new List<AbstractView>());
                 inputHistory.Clear();
-                Game.Timer = 0;
+                _TimerVisible = false;
                 Game.TimerText = null;
+                Game.Timer = 0;
                 RedrawAll();
             }
         }
@@ -280,10 +289,8 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
-                Console.CursorTop = fullHeight - 1;
-                Console.CursorLeft = mainWidth + 1;
-                Console.Write((Game.TimerText != null ? string.Format("{0}: {1}", Game.TimerText, Game.Timer) : "").PadRightHard(sideWidth));
-                ResetCursor();
+                _TimerVisible = true;
+                RedrawPinned();
             }
         }
 
@@ -293,6 +300,7 @@ namespace ToSTextClient
             {
                 Console.CursorVisible = false;
                 if (views.Where(v => v == mainView).Any()) RedrawMainView();
+                if (views.Where(v => v == mainView.PinnedView).Any()) RedrawPinned();
                 views = views.Where(sideViews.Contains).ToArray();
                 if (views.Length > 0) RedrawSideView(views);
             }
@@ -332,18 +340,19 @@ namespace ToSTextClient
                         return;
                     }
                     if (sideWidth <= 0) return;
-                    RedrawTimer();
+                    pinnedHeight = ((AbstractView)mainView.PinnedView).GetFullHeight() + (_TimerVisible ? 1 : 0);
+                    RedrawPinned();
                     int lastSideHeight = 1;
                     sideHeight = 0;
-                    sideEnd = fullHeight - 2;
+                    sideEnd = fullHeight - pinnedHeight - 1;
                     foreach (AbstractView view in sideViews.Where(view => view.IsAllowed(_CommandContext)))
                     {
                         Console.CursorLeft = fullWidth - sideWidth - 1;
                         if (lastSideHeight != 0)
                         {
-                            if (++sideHeight < fullHeight)
+                            if (sideHeight++ < fullHeight - pinnedHeight)
                             {
-                                Console.CursorTop = fullHeight - sideHeight - 1;
+                                Console.CursorTop = fullHeight - sideHeight - pinnedHeight;
                                 Console.Write("".PadRight(sideWidth, '-'));
                                 Console.CursorLeft = fullWidth - sideWidth - 1;
                             }
@@ -351,10 +360,10 @@ namespace ToSTextClient
                         lock (view)
                         {
                             sideHeight += lastSideHeight = view.GetFullHeight();
-                            view.DrawOffscreen(sideWidth, lastSideHeight, fullHeight - sideHeight - 1, fullWidth - sideWidth - 1);
+                            view.DrawOffscreen(sideWidth, lastSideHeight, fullHeight - sideHeight - pinnedHeight, fullWidth - sideWidth - 1);
                         }
                     }
-                    for (int currentLine = 0; currentLine < fullHeight - sideHeight - 1; currentLine++)
+                    for (int currentLine = 0; currentLine < fullHeight - sideHeight - pinnedHeight; currentLine++)
                     {
                         Console.CursorTop = currentLine;
                         Console.CursorLeft = mainWidth + 1;
@@ -388,6 +397,26 @@ namespace ToSTextClient
                 Console.Write((inputContext != null ? EDITING_STATUS : inputBuffer.Length == 0 ? _StatusLine ?? (commandMode ? DEFAULT_COMMAND_STATUS : DEFAULT_STATUS) : inputBuffer.ToString()).PadRightHard(mainWidth - 2));
                 Console.ResetColor();
                 ResetCursor();
+            }
+        }
+
+        protected void RedrawPinned()
+        {
+            lock (drawLock)
+            {
+                int pinnedFullHeight = ((AbstractView)mainView.PinnedView).GetFullHeight();
+                if (pinnedFullHeight + (_TimerVisible ? 1 : 0) != pinnedHeight) RedrawSideViews();
+                else
+                {
+                    ((AbstractView)mainView.PinnedView).DrawOffscreen(sideWidth, pinnedFullHeight, fullHeight - pinnedHeight, mainWidth + 1);
+                    if (_TimerVisible)
+                    {
+                        Console.CursorTop = fullHeight - 1;
+                        Console.CursorLeft = mainWidth + 1;
+                        Console.Write((Game.TimerText != null ? string.Format("{0}: {1}", Game.TimerText, Game.Timer) : "").PadRightHard(sideWidth));
+                    }
+                    ResetCursor();
+                }
             }
         }
 
@@ -698,25 +727,25 @@ namespace ToSTextClient
             lock (drawLock)
             {
                 mainView.Scroll(lines);
-                sideEnd -= lines = sideEnd - Math.Max(fullHeight - 2, Math.Min(sideHeight - 1, sideEnd - lines));
+                sideEnd -= lines = sideEnd - Math.Max(fullHeight - pinnedHeight - 1, Math.Min(sideHeight - 1, sideEnd - lines));
                 if (lines > 0)
                 {
-                    Console.MoveBufferArea(mainWidth + 1, lines, sideWidth, fullHeight - lines - 2, mainWidth + 1, 0);
+                    Console.MoveBufferArea(mainWidth + 1, lines, sideWidth, fullHeight - lines - pinnedHeight - 1, mainWidth + 1, 0);
                     int line = sideEnd, lastHeight = 0;
                     foreach (AbstractView sideView in sideViews)
                     {
-                        if (lastHeight != 0 && line < fullHeight - 1 && line >= fullHeight - lines - 1)
+                        if (lastHeight != 0 && line < fullHeight - pinnedHeight && line >= fullHeight - lines - pinnedHeight)
                         {
                             Console.CursorTop = --line;
                             Console.CursorLeft = mainWidth + 1;
                             Console.Write("".PadRight(sideWidth, '-'));
                         }
-                        line -= lastHeight = sideView.Move(lines, line, fullHeight - 2);
+                        line -= lastHeight = sideView.Move(lines, line, fullHeight - pinnedHeight - 1);
                     }
                 }
                 else if (lines < 0)
                 {
-                    Console.MoveBufferArea(mainWidth + 1, 0, sideWidth, fullHeight + lines - 2, mainWidth + 1, -lines);
+                    Console.MoveBufferArea(mainWidth + 1, 0, sideWidth, fullHeight + lines - pinnedHeight - 1, mainWidth + 1, -lines);
                     int line = sideEnd, lastHeight = 0;
                     foreach (AbstractView sideView in sideViews)
                     {
@@ -747,11 +776,14 @@ namespace ToSTextClient
         protected int lastHeight;
         protected int lastFullHeight;
 
-        protected AbstractView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight)
+        public IView PinnedView { get; protected set; }
+
+        protected AbstractView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, IView pinnedView = null)
         {
             this.isAllowed = isAllowed;
             this.minimumWidth = minimumWidth;
             this.minimumHeight = minimumHeight;
+            PinnedView = pinnedView;
         }
 
         public virtual int GetMinimumWidth() => minimumWidth;
@@ -864,7 +896,7 @@ namespace ToSTextClient
         protected ITextUI ui;
         protected Action<AbstractView> append;
 
-        public TextView(ITextUI ui, Action<AbstractView> append, Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight) : base(isAllowed, minimumWidth, minimumHeight)
+        public TextView(ITextUI ui, Action<AbstractView> append, Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, IView pinnedView = null) : base(isAllowed, minimumWidth, minimumHeight, pinnedView)
         {
             this.ui = ui;
             this.append = append;
@@ -1531,6 +1563,50 @@ namespace ToSTextClient
         protected enum Host
         {
             Live, PTR, Local
+        }
+    }
+
+    class UserInfoView : AbstractView
+    {
+        protected ConsoleUI ui;
+
+        public UserInfoView(ConsoleUI ui, int minimumWidth, int minimumHeight) : base(context => true, minimumWidth, minimumHeight) => this.ui = ui;
+
+        public override int GetFullHeight() => ui.Game.Username != null ? 2 : 0;
+
+        protected override int DrawUnsafe(int width, int height, int startLine = 0)
+        {
+            int cursorOffset = Console.CursorLeft;
+            int currentLine = 0, lineIndex = 0;
+            if (++currentLine > startLine)
+            {
+                if (lineIndex++ >= height) return lineIndex;
+                Console.Write(ui.Game.Username.PadRightHard(width));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
+            if (++currentLine > startLine)
+            {
+                if (lineIndex++ >= height) return lineIndex;
+                Console.Write(string.Format("{0} TP / {1} MP", ui.Game.TownPoints, ui.Game.MeritPoints).PadRightHard(width));
+            }
+            return lineIndex;
+        }
+    }
+
+    class NameView : AbstractView
+    {
+        protected ConsoleUI ui;
+
+        public NameView(ConsoleUI ui, int minimumWidth, int minimumHeight) : base(context => true, minimumWidth, minimumHeight) => this.ui = ui;
+
+        public override int GetFullHeight() => 1;
+
+        protected override int DrawUnsafe(int width, int height, int startLine = 0)
+        {
+            if (startLine > 0 || height < 1) return 0;
+            Console.Write(ui.Game.GameState.ToName(ui.Game.GameState.Self, true).PadRightHard(width));
+            return 1;
         }
     }
 
