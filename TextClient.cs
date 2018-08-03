@@ -40,13 +40,14 @@ namespace ToSTextClient
         public static readonly Color DARK_GRAY = Color.FromArgb(0x50, 0x50, 0x50);
 
         public string Username { get; protected set; }
-        public uint TownPoints { get; set; }
-        public uint MeritPoints { get; set; }
+        public uint TownPoints { get => _TownPoints; set { _TownPoints = value; UI.RedrawView(UI.HomeView.PinnedView); } }
+        public uint MeritPoints { get => _MeritPoints; set { _MeritPoints = value; UI.RedrawView(UI.HomeView.PinnedView); } }
         public bool OwnsCoven { get; protected set; }
         public IList<GameMode> ActiveGameModes { get; set; } = new List<GameMode>();
         public IList<Achievement> EarnedAchievements { get; set; } = new List<Achievement>();
         public IList<Character> OwnedCharacters { get; set; } = new List<Character>();
         public IList<House> OwnedHouses { get; set; } = new List<House>();
+        public IList<Pack> OwnedPacks { get; set; } = new List<Pack>();
         public IList<Pet> OwnedPets { get; set; } = new List<Pet>();
         public IList<LobbyIcon> OwnedLobbyIcons { get; set; } = new List<LobbyIcon>();
         public IList<DeathAnimation> OwnedDeathAnimations { get; set; } = new List<DeathAnimation>();
@@ -90,6 +91,9 @@ namespace ToSTextClient
 
         private Socket socket;
         private byte[] buffer;
+
+        private uint _TownPoints;
+        private uint _MeritPoints;
         private GameState _GameState;
         private int _Timer;
         private string _TimerText;
@@ -318,7 +322,12 @@ namespace ToSTextClient
             MessageParser.SystemMessage += message => UI.GameView.AppendLine(("(System) {0}", YELLOW, null), message);
             MessageParser.StringTableMessage += tableMessage => UI.GameView.AppendLine(Localization.Of(tableMessage));
             // Add missing cases here
-            MessageParser.UserInformation += (username, townPoints, meritPoints) => UI.HomeView.ReplaceLine(0, ("{0} ({1} TP, {2} MP)", YELLOW, null), Username = username, TownPoints = townPoints, MeritPoints = meritPoints);
+            MessageParser.UserInformation += (username, townPoints, meritPoints) =>
+            {
+                TownPoints = townPoints;
+                MeritPoints = meritPoints;
+                Username = username;
+            };
             // Add missing cases here
             MessageParser.ForcedLogout += () =>
             {
@@ -330,12 +339,14 @@ namespace ToSTextClient
             MessageParser.PurchasedCharacters += characters => OwnedCharacters = characters.ToList();
             MessageParser.PurchasedHouses += houses => OwnedHouses = houses.ToList();
             // Add missing cases here
+            MessageParser.UpdatePaidCurrency += tp => TownPoints = tp;
+            MessageParser.PurchasedPacks += packs => OwnedPacks = packs.ToList();
             MessageParser.PurchasedPets += pets => OwnedPets = pets.ToList();
-            MessageParser.SetLastBonusWinTime += seconds => UI.HomeView.ReplaceLine(1, "Next FWotD bonus is available in {0} seconds", seconds);
+            MessageParser.SetLastBonusWinTime += seconds => UI.HomeView.ReplaceLine(0, "Next FWotD bonus is available in {0} seconds", seconds);
             MessageParser.EarnedAchievements52 += achievements =>
             {
                 EarnedAchievements = achievements.ToList();
-                UI.HomeView.ReplaceLine(2, "Number of achievements earned: {0}", EarnedAchievements.Count);
+                UI.HomeView.ReplaceLine(1, "Number of achievements earned: {0}", EarnedAchievements.Count);
             };
             MessageParser.PurchasedLobbyIcons += lobbyIcons => OwnedLobbyIcons = lobbyIcons.ToList();
             MessageParser.PurchasedDeathAnimations += deathAnimations => OwnedDeathAnimations = deathAnimations.ToList();
@@ -615,6 +626,8 @@ namespace ToSTextClient
             MessageParser.VampireVisitedMessage += player => UI.GameView.AppendLine(("Vampires visited {0}", GREEN, null), GameState.ToName(player));
             // Add missing cases here
             MessageParser.TransporterNotification += (player1, player2) => UI.GameView.AppendLine(("A transporter transported {0} and {1}", GREEN, null), GameState.ToName(player1), GameState.ToName(player2));
+            // Add missing cases here
+            MessageParser.UpdateFreeCurrency += mp => MeritPoints = mp;
             // Add missing cases here
             MessageParser.TrackerNightAbility += player => UI.GameView.AppendLine(("{0} was visited by your target", GREEN, null), GameState.ToName(player));
             MessageParser.AmbusherNightAbility += player => UI.GameView.AppendLine(("{0} was seen preparing an ambush while visiting your target", RED), GameState.ToName(player));
