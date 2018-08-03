@@ -362,7 +362,7 @@ namespace ToSTextClient
                         lock (view)
                         {
                             sideHeight += lastSideHeight = view.GetFullHeight();
-                            view.DrawOffscreen(sideWidth, lastSideHeight, fullHeight - sideHeight - pinnedHeight, fullWidth - sideWidth - 1);
+                            view.DrawOffscreen(sideWidth, fullHeight - pinnedHeight - 1, 0, fullWidth - sideWidth - 1, sideHeight + pinnedHeight - fullHeight);
                         }
                     }
                     for (int currentLine = 0; currentLine < fullHeight - sideHeight - pinnedHeight; currentLine++)
@@ -408,11 +408,11 @@ namespace ToSTextClient
             lock (drawLock)
             {
                 Console.CursorVisible = false;
-                int pinnedFullHeight = ((AbstractView)mainView.PinnedView).GetFullHeight();
+                int pinnedFullHeight = ((AbstractView)mainView.PinnedView)?.GetFullHeight() ?? 0;
                 if (pinnedFullHeight + (_TimerVisible ? 1 : 0) != pinnedHeight) RedrawSideViews();
                 else
                 {
-                    ((AbstractView)mainView.PinnedView).DrawOffscreen(sideWidth, pinnedFullHeight, fullHeight - pinnedHeight, mainWidth + 1);
+                    ((AbstractView)mainView.PinnedView)?.DrawOffscreen(sideWidth, pinnedFullHeight, fullHeight - pinnedHeight, mainWidth + 1);
                     if (_TimerVisible)
                     {
                         Console.CursorTop = fullHeight - 1;
@@ -744,7 +744,7 @@ namespace ToSTextClient
                             Console.CursorLeft = mainWidth + 1;
                             Console.Write("".PadRight(sideWidth, '-'));
                         }
-                        line -= lastHeight = sideView.Move(lines, line, fullHeight - pinnedHeight - 1);
+                        line -= lastHeight = sideView.Move(lines);
                     }
                 }
                 else if (lines < 0)
@@ -759,7 +759,7 @@ namespace ToSTextClient
                             Console.CursorLeft = mainWidth + 1;
                             Console.Write("".PadRight(sideWidth, '-'));
                         }
-                        line -= lastHeight = sideView.Move(lines, line, 0);
+                        line -= lastHeight = sideView.Move(lines);
                     }
                 }
                 ResetCursor();
@@ -819,12 +819,10 @@ namespace ToSTextClient
         {
             if (lastWidth < GetMinimumWidth()) return RedrawResult.WIDTH_CHANGED;
             else if (lastHeight < GetMinimumHeight() || GetFullHeight() != lastFullHeight) return RedrawResult.HEIGHT_CHANGED;
-            Console.CursorTop = Math.Max(lastDrawnTop, 0);
-            Console.CursorLeft = lastDrawnLeft;
-            int offset = Math.Min(0, lastDrawnTop);
-            for (int drawn = DrawUnsafe(lastWidth, lastHeight + offset, lastStartLine - offset); drawn < lastHeight + offset; drawn++)
+            int drawHeight = Math.Min(lastFullHeight - lastStartLine, lastHeight);
+            for (int drawn = DrawSafe(lastDrawnTop, drawHeight, lastStartLine); drawn < drawHeight; drawn++)
             {
-                Console.CursorTop = lastDrawnTop - offset + drawn;
+                Console.CursorTop = lastDrawnTop + drawn;
                 Console.CursorLeft = lastDrawnLeft;
                 Console.Write("".PadRight(lastWidth));
             }
@@ -833,12 +831,12 @@ namespace ToSTextClient
         public virtual int Scroll(int lines)
         {
             if (lastWidth == 0 || lastHeight == 0) return 0;
-            int fullHeight = GetFullHeight();
-            lastStartLine += lines = Math.Min(Math.Max(fullHeight - lastHeight, 0) - lastStartLine, Math.Max(-lastStartLine, lines));
+            lastFullHeight = GetFullHeight();
+            lastStartLine += lines = Math.Min(Math.Max(lastFullHeight - lastHeight, 0) - lastStartLine, Math.Max(-lastStartLine, lines));
             if (lines > 0)
             {
                 Console.MoveBufferArea(lastDrawnLeft, lastDrawnTop + lines, lastWidth, lastHeight - lines, lastDrawnLeft, lastDrawnTop);
-                int drawLines = Math.Min(lines, Math.Max(0, fullHeight - lastStartLine));
+                int drawLines = Math.Min(lines, Math.Max(0, Math.Min(lastHeight, lastFullHeight - lastStartLine)));
                 if (drawLines > 0)
                 {
                     Console.CursorTop = lastDrawnTop + lastHeight - lines;
@@ -850,7 +848,7 @@ namespace ToSTextClient
             {
                 lines = -lines;
                 Console.MoveBufferArea(lastDrawnLeft, lastDrawnTop, lastWidth, lastHeight - lines, lastDrawnLeft, lastDrawnTop + lines);
-                int drawLines = Math.Min(lines, fullHeight - lastStartLine);
+                int drawLines = Math.Min(lines, Math.Min(lastHeight, lastFullHeight - lastStartLine));
                 if (drawLines > 0)
                 {
                     Console.CursorTop = lastDrawnTop;
@@ -861,32 +859,29 @@ namespace ToSTextClient
             }
             return lines;
         }
-        public virtual int Move(int lines, int pos, int drawOffset)
+        public virtual int Move(int lines)
         {
-            lastDrawnTop -= lines;
+            lastStartLine += lines;
             if (lines > 0)
             {
-                int drawLower = Math.Max(pos - lastHeight, drawOffset - lines);
-                int drawUpper = Math.Min(pos, drawOffset);
-                if (drawUpper - drawLower > 0)
-                {
-                    Console.CursorTop = drawLower;
-                    Console.CursorLeft = lastDrawnLeft;
-                    DrawUnsafe(lastWidth, drawUpper - drawLower, lastStartLine + drawLower - pos + lastHeight);
-                }
+                int drawLower = Math.Max(-lastStartLine, lastDrawnTop + lastHeight - lines);
+                int drawUpper = Math.Min(lastFullHeight - lastStartLine, lastDrawnTop + lastHeight);
+                if (drawUpper - drawLower > 0) DrawSafe(drawLower, drawUpper - drawLower, lastStartLine + drawLower - lastDrawnTop);
             }
             else if (lines < 0)
             {
-                int drawLower = Math.Max(pos - lastHeight, drawOffset);
-                int drawUpper = Math.Min(pos, drawOffset - lines);
-                if (drawUpper - drawLower > 0)
-                {
-                    Console.CursorTop = drawLower;
-                    Console.CursorLeft = lastDrawnLeft;
-                    DrawUnsafe(lastWidth, drawUpper - drawLower, lastStartLine + drawLower - pos + lastHeight);
-                }
+                int drawLower = Math.Max(-lastStartLine, lastDrawnTop);
+                int drawUpper = Math.Min(lastFullHeight - lastStartLine, lastDrawnTop - lines);
+                if (drawUpper - drawLower > 0) DrawSafe(drawLower, drawUpper - drawLower, lastStartLine + drawLower - lastDrawnTop);
             }
-            return lastHeight;
+            return lastFullHeight;
+        }
+        protected int DrawSafe(int cursorTop, int height, int startLine)
+        {
+            int offset = Math.Min(0, startLine);
+            Console.CursorTop = cursorTop - offset;
+            Console.CursorLeft = lastDrawnLeft;
+            return DrawUnsafe(lastWidth, height + offset, startLine - offset) - offset;
         }
         protected abstract int DrawUnsafe(int width, int height, int startLine = 0);
 
@@ -1359,6 +1354,10 @@ namespace ToSTextClient
             set { _Status = value; ui.RedrawView(this); }
         }
 
+        private static readonly FormattedString HOST_LIVE = FormattedString.From(("Live", TextClient.GREEN, null), (" / PTR / Local", null, null));
+        private static readonly FormattedString HOST_PTR = FormattedString.From(("Live / ", null, null), ("PTR", TextClient.GREEN, null), (" / Local", null, null));
+        private static readonly FormattedString HOST_LOCAL = FormattedString.From(("Live / PTR / ", null, null), ("Local", TextClient.GREEN, null));
+
         protected ConsoleUI ui;
         protected Action<TextClient> setGame;
         protected Host selectedHost;
@@ -1467,7 +1466,6 @@ namespace ToSTextClient
         public void Close()
         {
             lineIndex = 1;
-            selectedHost = Host.Live;
             username.Clear();
             usernameCursor = 0;
             password.Clear();
@@ -1489,31 +1487,13 @@ namespace ToSTextClient
                 switch (selectedHost)
                 {
                     case Host.Live:
-                        Console.ForegroundColor = TextClient.GREEN;
-                        Console.Write(Host.Live);
-                        Console.ForegroundColor = TextClient.WHITE;
-                        Console.Write(" / ");
-                        Console.Write(Host.PTR);
-                        Console.Write(" / ");
-                        Console.Write(Host.Local);
+                        HOST_LIVE.Render(width);
                         break;
                     case Host.PTR:
-                        Console.Write(Host.Live);
-                        Console.Write(" / ");
-                        Console.ForegroundColor = TextClient.GREEN;
-                        Console.Write(Host.PTR);
-                        Console.ForegroundColor = TextClient.WHITE;
-                        Console.Write(" / ");
-                        Console.Write(Host.Local);
+                        HOST_PTR.Render(width);
                         break;
                     case Host.Local:
-                        Console.Write(Host.Live);
-                        Console.Write(" / ");
-                        Console.Write(Host.PTR);
-                        Console.Write(" / ");
-                        Console.ForegroundColor = TextClient.GREEN;
-                        Console.Write(Host.Local);
-                        Console.ForegroundColor = TextClient.WHITE;
+                        HOST_LOCAL.Render(width);
                         break;
                 }
                 Console.CursorTop++;

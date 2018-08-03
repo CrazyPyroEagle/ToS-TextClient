@@ -301,7 +301,11 @@ namespace ToSTextClient
                 TimerText = "Start";
                 UI.GameView.AppendLine(("The game will start in 10 seconds", GREEN));
             };
-            MessageParser.CancelStartCooldown += () => UI.GameView.AppendLine(("The start cooldown was cancelled", RED));
+            MessageParser.CancelStartCooldown += () =>
+            {
+                Timer = 0;
+                UI.GameView.AppendLine(("The start cooldown was cancelled", RED));
+            };
             MessageParser.AssignNewHost += player =>
             {
                 UI.GameView.AppendLine("The host has been repicked");
@@ -542,19 +546,19 @@ namespace ToSTextClient
                 GameState.Players[(int)player].Left = true;
             };
             MessageParser.VigilanteKilledTown += () => UI.GameView.AppendLine(("You put your gun away out of fear of shooting another town member", GREEN, null));
-            MessageParser.NotifyUsersOfPrivateMessage += (sender, receiver) => UI.GameView.AppendLine(("{0} is whispering to {1}", GREEN, null), GameState.ToName(sender), GameState.ToName(receiver));
+            MessageParser.NotifyUsersOfPrivateMessage += (sender, receiver) => UI.GameView.AppendLine(FormattedString.From((GameState.ToName(sender), WHITE, null), (" is whispering to ", BLUE, null), (GameState.ToName(receiver), WHITE, null)));
             MessageParser.PrivateMessage += (type, player, message, receiver) =>
             {
                 switch (type)
                 {
                     case PrivateMessageType.TO:
-                        UI.GameView.AppendLine(("To {0}: {1}", MAGENTA, null), GameState.ToName(player), message);
+                        UI.GameView.AppendLine(("To {0}: {1}", MAGENTA, null), (FormattedString)(GameState.ToName(player), WHITE, null), message);
                         break;
                     case PrivateMessageType.FROM:
-                        UI.GameView.AppendLine(("From {0}: {1}", MAGENTA, null), GameState.ToName(player), message);
+                        UI.GameView.AppendLine(("From {0}: {1}", MAGENTA, null), (FormattedString)(GameState.ToName(player), WHITE, null), message);
                         break;
                     case PrivateMessageType.FROM_TO:
-                        UI.GameView.AppendLine(("From {0} to {1}: {2}", MAGENTA, null), GameState.ToName(player), GameState.ToName(receiver.Value), message);
+                        UI.GameView.AppendLine(("From {0} to {1}: {2}", MAGENTA, null), (FormattedString)(GameState.ToName(player), WHITE, null), GameState.ToName(receiver.Value), message);
                         break;
                 }
             };
