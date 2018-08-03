@@ -9,7 +9,7 @@ namespace ToSTextClient
     interface IDocumented
     {
         string Description { get; }
-        IEnumerable<string> Documentation { get; }
+        IEnumerable<FormattedString> Documentation { get; }
     }
 
     interface IContextual
@@ -21,7 +21,7 @@ namespace ToSTextClient
     {
         public virtual string UsageLine => "";
         public virtual string Description => description;
-        public virtual IEnumerable<string> Documentation => ToDocs(Parsers);
+        public virtual IEnumerable<FormattedString> Documentation => ToDocs(Parsers);
         public virtual ArgumentParser[] Parsers => new ArgumentParser[0];
         protected Func<CommandContext, bool> isAllowed;
         
@@ -40,7 +40,7 @@ namespace ToSTextClient
 
         public bool IsAllowed(CommandContext activeContext) => isAllowed(activeContext);
 
-        protected IEnumerable<string> ToDocs(params ArgumentParser[] args) => args.SelectMany(p => new string[] { string.Format("  {0}", p.DisplayName), p.Description });
+        protected IEnumerable<FormattedString> ToDocs(params ArgumentParser[] args) => args.SelectMany(p => new FormattedString[] { string.Format("  {0}", p.DisplayName), p.Description });
     }
 
     class Command<T1> : Command
@@ -104,7 +104,7 @@ namespace ToSTextClient
     {
         public override string UsageLine => string.Format("[{0}]", subName);
         public override string Description => string.Format(description, string.Format("[{0}]", subName));
-        public override IEnumerable<string> Documentation => base.Documentation.Concat(commands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => c.Value.IsAllowed(ui.CommandContext)).SelectMany(c => new string[] { string.Format("  {0} {1}", c.Key, c.Value.UsageLine), c.Value.Description }).ListHeader(string.Format(" ~ {0}", subPlural)));
+        public override IEnumerable<FormattedString> Documentation => base.Documentation.Concat(commands.GroupBy(c => c.Value).Select(c => c.First()).Where(c => c.Value.IsAllowed(ui.CommandContext)).SelectMany(c => new FormattedString[] { string.Format("  {0} {1}", c.Key, c.Value.UsageLine), c.Value.Description }).Prepend(string.Format(" ~ {0}", subPlural)));
 
         protected IDictionary<string, Command> commands = new Dictionary<string, Command>();
         protected ITextUI ui;
@@ -153,7 +153,7 @@ namespace ToSTextClient
         public virtual string DisplayName { get; protected set; }
         public virtual string[] HelpNames { get; protected set; } = Array.Empty<string>();
         public virtual string Description { get; protected set; }
-        public abstract IEnumerable<string> Documentation { get; }
+        public abstract IEnumerable<FormattedString> Documentation { get; }
         protected Action onFailed;
 
         public ArgumentParser(string displayName, string description, Action onFailed = null)
@@ -168,12 +168,12 @@ namespace ToSTextClient
     {
         public delegate bool TryParser(string value, out Type result);
 
-        public override IEnumerable<string> Documentation => getValueDocs().ListHeader(" ~ Possible Values");
+        public override IEnumerable<FormattedString> Documentation => getValueDocs().Prepend(" ~ Possible Values");
         public TryParser Parser { get; protected set; }
 
-        protected Func<IEnumerable<string>> getValueDocs;
+        protected Func<IEnumerable<FormattedString>> getValueDocs;
 
-        public ArgumentParser(string displayName, string description, TryParser parser, Func<IEnumerable<string>> getValueDocs, Action onFailed = null) : base(displayName, description, onFailed)
+        public ArgumentParser(string displayName, string description, TryParser parser, Func<IEnumerable<FormattedString>> getValueDocs, Action onFailed = null) : base(displayName, description, onFailed)
         {
             Parser = parser;
             this.getValueDocs = getValueDocs;
@@ -207,21 +207,21 @@ namespace ToSTextClient
             }
             copy = value;
             return true;
-        }, Enumerable.Empty<string>, () => ui.StatusLine = string.Format("{0} cannot be empty", name));
+        }, Enumerable.Empty<FormattedString>, () => ui.StatusLine = string.Format("{0} cannot be empty", name));
         public static ArgumentParser<string> Text(string name) => new ArgumentParser<string>(string.Format("<{0}>", name), "Text body", (string value, out string copy) =>
         {
             copy = value;
             return true;
-        }, Enumerable.Empty<string>);
+        }, Enumerable.Empty<FormattedString>);
         public static ArgumentParser<string> Username(ITextUI ui) => new ArgumentParser<string>("[Username]", "A username", (string value, out string copy) =>
         {
             copy = value;
             return !value.Contains(' ');
-        }, Enumerable.Empty<string>);
+        }, Enumerable.Empty<FormattedString>);
         
         public static ArgumentParser<Player> Player(ITextUI ui) => new ArgumentParser<Player>("[Player]", "The name or number of a player", (string value, out Player player) => ui.GameState.TryParsePlayer(value, out player), () => ui.GameState.Players.Select(ps => ui.GameState.ToName(ps, true)), () => ui.StatusLine = "Invalid player");
-        public static ArgumentParser<TEnum> ForEnum<TEnum>(ITextUI ui, string name = null, bool an = false) where TEnum : struct => new ArgumentParser<TEnum>(name ?? string.Format("[{0}]", typeof(TEnum).Name.AddSpacing().ToDisplayName()), string.Format("The name or ID of {0} {1}", an ? "an" : "a", typeof(TEnum).Name.AddSpacing().ToLower()), TryParseEnum, GetEnumValueDocs<TEnum>, () => ui.StatusLine = string.Format("Invalid {0}", typeof(TEnum).Name.AddSpacing().ToLower()));
-        public static ArgumentParser<byte> Position(ITextUI ui) => new ArgumentParser<byte>("[Position]", "A position number", ModifyResult<byte, byte>(byte.TryParse, b => (byte)(b - 1u)), Enumerable.Empty<string>, () => ui.StatusLine = "Invalid position");
+        public static ArgumentParser<TEnum> ForEnum<TEnum>(ITextUI ui, string name = null, bool an = false, Func<TEnum, FormattedString> map = null) where TEnum : struct => new ArgumentParser<TEnum>(name ?? string.Format("[{0}]", typeof(TEnum).Name.AddSpacing().ToDisplayName()), string.Format("The name or ID of {0} {1}", an ? "an" : "a", typeof(TEnum).Name.AddSpacing().ToLower()), TryParseEnum, map == null ? GetEnumValueDocs<TEnum> : GetEnumValueDocs(map), () => ui.StatusLine = string.Format("Invalid {0}", typeof(TEnum).Name.AddSpacing().ToLower()));
+        public static ArgumentParser<byte> Position(ITextUI ui) => new ArgumentParser<byte>("[Position]", "A position number", ModifyResult<byte, byte>(byte.TryParse, b => (byte)(b - 1u)), Enumerable.Empty<FormattedString>, () => ui.StatusLine = "Invalid position");
 
         public static ArgumentParser<Option<T>> Optional<T>(ArgumentParser<T> parser) => new ArgumentParser<Option<T>>(OptionalDisplay(parser.DisplayName), string.Format("{0} (optional)", parser.Description), (string value, out Option<T> result) =>
         {
@@ -241,7 +241,9 @@ namespace ToSTextClient
 
         private static string OptionalDisplay(string display) => string.Format("<{0}>", display[0] == '[' && display[display.Length - 1] == ']' ? display.Substring(1, display.Length - 2) : display);
 
-        private static IEnumerable<string> GetEnumValueDocs<Type>() => Enum.GetNames(typeof(Type)).Select(n => string.Format("({0}) {1}", Enum.Format(typeof(Type), Enum.Parse(typeof(Type), n), "d"), n.ToDisplayName()));
+        private static IEnumerable<FormattedString> GetEnumValueDocs<Type>() => Enum.GetNames(typeof(Type)).Select(n => FormattedString.Format("({0}) {1}", Enum.Format(typeof(Type), Enum.Parse(typeof(Type), n), "d"), n.ToDisplayName()));
+
+        private static Func<IEnumerable<FormattedString>> GetEnumValueDocs<Type>(Func<Type, FormattedString> map) => () => Enum.GetNames(typeof(Type)).Select(n => Enum.Parse(typeof(Type), n)).Select(n => FormattedString.Format("({0}) {1}", Enum.Format(typeof(Type), n, "d"), map((Type)n)));
     }
     
     public enum CommandContext

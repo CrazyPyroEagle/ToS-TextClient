@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
 using System.Linq;
 using System.Net.Sockets;
@@ -19,6 +20,24 @@ namespace ToSTextClient
         public const uint BUILD_NUMBER = 9706u;     // Live = 9706 / PTR = 9706
         private static readonly byte[] MODULUS = new byte[] { 0xce, 0x22, 0x31, 0xcc, 0xc2, 0x33, 0xed, 0x95, 0xf8, 0x28, 0x6e, 0x77, 0xd7, 0xb4, 0xa6, 0x55, 0xe0, 0xad, 0xf5, 0x26, 0x08, 0x7b, 0xff, 0xaa, 0x2f, 0x78, 0x6a, 0x3f, 0x93, 0x54, 0x5f, 0x48, 0xb5, 0x89, 0x39, 0x83, 0xef, 0x1f, 0x61, 0x15, 0x1f, 0x18, 0xa0, 0xe1, 0xdd, 0x02, 0xa7, 0x42, 0x27, 0x77, 0x71, 0x8b, 0x79, 0xe9, 0x90, 0x8b, 0x0e, 0xe8, 0x4a, 0x33, 0xd2, 0x5d, 0xde, 0x1f, 0xb4, 0x7d, 0xf4, 0x35, 0xf5, 0xea, 0xf6, 0xe7, 0x04, 0x2c, 0xaf, 0x03, 0x71, 0xe4, 0x6f, 0x50, 0x7f, 0xd2, 0x70, 0x70, 0x39, 0xee, 0xa6, 0x0a, 0xae, 0xf7, 0xbc, 0x17, 0x51, 0x81, 0xf1, 0xd4, 0xf1, 0x33, 0x85, 0xf4, 0xab, 0x54, 0x3b, 0x1e, 0x42, 0x56, 0xa4, 0x79, 0xd1, 0x4e, 0xcc, 0xb4, 0xaa, 0xaa, 0x73, 0xa3, 0x35, 0xf4, 0xe6, 0x57, 0x66, 0xe6, 0x52, 0x0e, 0x51, 0x8b, 0x7e, 0x26, 0xe8, 0x63, 0xdf, 0x58, 0x57, 0x6b, 0x87, 0xdd, 0xd5, 0xf2, 0xb0, 0x58, 0x73, 0x7b, 0x10, 0x99, 0x5a, 0x99, 0x80, 0xe3, 0x8d, 0xde, 0x57, 0x98, 0xac, 0x9a, 0xf8, 0xf7, 0x37, 0x2c, 0x6f, 0x46, 0x4f, 0xf8, 0xba, 0xc8, 0x59, 0x57, 0x9d, 0x2f, 0xac, 0x38, 0xd8, 0x88, 0x89, 0xcd, 0x12, 0x3e, 0x08, 0x09, 0xb4, 0xcd, 0x5d, 0x05, 0x0b, 0x16, 0xce, 0x80, 0x6a, 0x19, 0xad, 0xea, 0xa9, 0xa2, 0x6c, 0x40, 0xba, 0x6d, 0x19, 0x74, 0x4b, 0x84, 0xd9, 0x46, 0xdc, 0xee, 0x93, 0x66, 0xb7, 0x4e, 0x98, 0xa7, 0x2c, 0x9a, 0x28, 0x0d, 0x3b, 0x7d, 0xb3, 0x90, 0x6f, 0x45, 0x18, 0x7c, 0x0c, 0xb1, 0x59, 0x5a, 0xb9, 0x16, 0xa2, 0x38, 0x2b, 0xcd, 0x2d, 0x2c, 0x48, 0xd7, 0x0d, 0xcc, 0xf0, 0x17, 0x60, 0x5c, 0x93, 0x39, 0x81, 0x28, 0xbd, 0x65, 0x8a, 0x5b, 0xb4, 0xe0, 0x51, 0x87, 0xc0, 0x77 };
         private static readonly byte[] EXPONENT = new byte[] { 0x01, 0x00, 0x01 };
+
+        // We have to use 0xFF0000, 0x00FF00, 0x00CCFF, and 0x505050 to stay within the 16 colour limit
+        public static readonly Color BLACK = Color.Black;
+        public static readonly Color WHITE = Color.White;
+        public static readonly Color GRAY = Color.LightGray;
+        public static readonly Color YELLOW = Color.Yellow;
+        public static readonly Color MAGENTA = Color.Magenta;
+        public static readonly Color GREEN = Color.FromArgb(0, 0xFF, 0);
+        public static readonly Color RED = Color.Red;
+        public static readonly Color BLUE = Color.FromArgb(0, 0xCC, 0xFF);
+        public static readonly Color PINK = Color.Pink;
+        public static readonly Color ORANGE = Color.Orange;
+        public static readonly Color BROWN = Color.SaddleBrown;
+        public static readonly Color PURPLE = Color.DarkMagenta;
+        public static readonly Color LIME = Color.Lime;
+        public static readonly Color DARK_RED = Color.DarkRed;
+        public static readonly Color DARK_YELLOW = Color.FromArgb(255, 200, 0);
+        public static readonly Color DARK_GRAY = Color.FromArgb(0x50, 0x50, 0x50);
 
         public string Username { get; protected set; }
         public uint TownPoints { get; set; }
@@ -42,7 +61,7 @@ namespace ToSTextClient
                     UI.GameView.Clear();
                     UI.CommandContext = CommandContext.LOBBY;
                     UI.SetMainView(UI.GameView);
-                    UI.GameView.AppendLine(("Joined a lobby for {0}", ConsoleColor.Green, ConsoleColor.Black), value.GameMode.ToString().ToDisplayName());
+                    UI.GameView.AppendLine(("Joined a lobby for {0}", GREEN, null), value.GameMode.ToString().ToDisplayName());
                 }
                 else
                 {
@@ -124,7 +143,7 @@ namespace ToSTextClient
             UI.RegisterCommand(new Command("Leave the game", CommandExtensions.IsInLobbyOrGame, cmd => Parser.LeaveGame()), "leave");
             UI.RegisterCommand(new Command("Leave the post-game lobby", CommandContext.POST_GAME.Set(), cmd => Parser.LeavePostGameLobby()), "leavepost");
             UI.RegisterCommand(new Command("Vote to repick the host", CommandContext.LOBBY.Set(), cmd => Parser.VoteToRepickHost()), "repick");
-            UI.RegisterCommand(new Command<Role>("Add {0} to the role list", context => context == CommandContext.LOBBY && GameState.Host, ArgumentParsers.ForEnum<Role>(UI), (cmd, role) =>
+            UI.RegisterCommand(new Command<Role>("Add {0} to the role list", context => context == CommandContext.LOBBY && GameState.Host, ArgumentParsers.ForEnum<Role>(UI, map: Localization.Of), (cmd, role) =>
             {
                 Parser.ClickedOnAddButton(role);
                 GameState.AddRole(role);
@@ -176,7 +195,7 @@ namespace ToSTextClient
                 Parser.SetHypnotistChoice(message);
                 UI.GameView.AppendLine("Your target will see: {0}", Localization.Of(message));
             }), "hm", "hypnotizemessage");
-            UI.RegisterCommand(new Command("Reveal yourself as the Mayor", CommandContext.DAY.Set().And(ac => GameState.Role == Role.MAYOR), cmd => Parser.SetDayChoice(GameState.Self)), "reveal");
+            UI.RegisterCommand(new Command("Reveal yourself as the Mayor", CommandContext.DAY.Set().And(ac => GameState.Role == Role.MAYOR), cmd => Parser.SetDayChoice(GameState.Self.ID)), "reveal");
             UI.RegisterCommand(new Command<Player>("Vote {0} up to the stand", CommandContext.VOTING.Set(), ArgumentParsers.Player(UI), (cmd, target) => Parser.SetVote(target)), "v", "vote");
             UI.RegisterCommand(new Command("Vote guilty", CommandContext.JUDGEMENT.Set(), cmd => Parser.JudgementVoteGuilty()), "g", "guilty");
             UI.RegisterCommand(new Command("Vote innocent", CommandContext.JUDGEMENT.Set(), cmd => Parser.JudgementVoteInnocent()), "i", "innocent");
@@ -185,7 +204,7 @@ namespace ToSTextClient
             UI.RegisterCommand(new Command<Player, ReportReason, string>("Report {0} for {1}", CommandExtensions.IsInGame, ArgumentParsers.Player(UI), ArgumentParsers.ForEnum<ReportReason>(UI, "[Reason]"), ArgumentParsers.Text("Message"), (cmd, player, reason, message) =>
             {
                 Parser.ReportPlayer(player, reason, message);
-                UI.GameView.AppendLine(("Reported {0} for {1}", ConsoleColor.Yellow, ConsoleColor.Black), GameState.ToName(player), reason.ToString().ToLower().Replace('_', ' '));
+                UI.GameView.AppendLine(("Reported {0} for {1}", YELLOW, null), GameState.ToName(player), reason.ToString().ToLower().Replace('_', ' '));
             }), "report");
             UI.RegisterCommand(new CommandGroup("Use the {0} system command", UI, "Subcommand", "Subcommands")
                 .Register(new Command<string>("Send {0} to all users", CommandExtensions.IsAuthenticated, ArgumentParsers.Text(UI, "Message"), (cmd, message) => Parser.SendSystemMessage(SystemCommand.MESSAGE, message)), "message")
@@ -215,7 +234,7 @@ namespace ToSTextClient
                 .Register(new Command("Reset your tutorial progress", CommandExtensions.IsAuthenticated, cmd => Parser.SendSystemMessage(SystemCommand.RESET_TUTORIAL_PROGRESS, "\x01")), "resettutorialprogress")
                 .Register(new Command("Reload the promotion data", CommandExtensions.IsAuthenticated, cmd => Parser.SendSystemMessage(SystemCommand.RELOAD_PROMOTION_XML, "\x01")), "reloadpromotionxml")
                 .Register(new Command<string, Promotion>("Grant {1} to {0}", CommandExtensions.IsAuthenticated, ArgumentParsers.Username(UI), ArgumentParsers.ForEnum<Promotion>(UI), (cmd, username, promotion) => Parser.SendSystemMessage(SystemCommand.GRANT_PROMOTION, username, ((byte)promotion).ToString())), "grantpromotion")
-                .Register(new Command<Role>("Set your role to {0}", CommandContext.LOBBY.Set().Or(CommandContext.PICK_NAMES.Set()), ArgumentParsers.ForEnum<Role>(UI), (cmd, role) => Parser.SendSystemMessage(SystemCommand.SET_ROLE, ((byte)role).ToString())), "setrole")
+                .Register(new Command<Role>("Set your role to {0}", CommandContext.LOBBY.Set().Or(CommandContext.PICK_NAMES.Set()), ArgumentParsers.ForEnum<Role>(UI, map: Localization.Of), (cmd, role) => Parser.SendSystemMessage(SystemCommand.SET_ROLE, ((byte)role).ToString())), "setrole")
                 .Register(new Command<AccountItem>("Grant yourself {0}", CommandExtensions.IsAuthenticated, ArgumentParsers.ForEnum<AccountItem>(UI), (cmd, accountItem) => Parser.SendSystemMessage(SystemCommand.GRANT_ACCOUNT_ITEM, ((byte)accountItem).ToString())), "grantaccountitem")
                 .Register(new Command<string>("Force {0} to change username", CommandExtensions.IsAuthenticated, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.FORCE_NAME_CHANGE, username)), "forcenamechange")
                 .Register(new Command<string>("Grant {0} 5200 Merit Points", CommandExtensions.IsAuthenticated, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_MERIT, username)), "grantmerit")
@@ -251,7 +270,7 @@ namespace ToSTextClient
             Parser.MessageWrite += (buffer, index, length) => socket.Send(buffer, index, length, SocketFlags.None);
             Initialize();
             Parser.Authenticate(AuthenticationMode.BMG_FORUMS, true, BUILD_NUMBER, authUsername, Convert.ToBase64String(encpw));
-            UI.AuthView.Status = ("Authenticating...", ConsoleColor.Green, ConsoleColor.Black);
+            UI.AuthView.Status = ("Authenticating...", GREEN, null);
             QueueReceive();
         }
 
@@ -264,15 +283,15 @@ namespace ToSTextClient
                     UI.AuthView.Status = null;
                     UI.SetMainView(UI.HomeView);
                     UI.CommandContext = CommandContext.HOME;
-                    UI.HomeView.ReplaceLine(0, ("Authenticated. Loading user information...", ConsoleColor.DarkGreen));
+                    UI.HomeView.ReplaceLine(0, ("Authenticated. Loading user information...", GREEN));
                 }
-                else UI.AuthView.Status = ("Authentication failed: registration required", ConsoleColor.DarkRed);
+                else UI.AuthView.Status = ("Authentication failed: registration required", RED);
             };
             MessageParser.CreateLobby += (host, gameMode) => GameState = new GameState(this, gameMode, host);
             MessageParser.SetHost += () => GameState.Host = true;
             MessageParser.UserJoinedGame += (host, display, username, player, lobbyIcon) => GameState.AddPlayer(player, host, display, username, lobbyIcon);
             MessageParser.UserLeftGame += (update, display, player) => GameState.RemovePlayer(player, update, display);
-            MessageParser.ChatBoxMessage += (_, player, message) => UI.GameView.AppendLine(("{0}: {1}", player <= Player.PLAYER_15 && GameState.Players[(int)player].Dead ? ConsoleColor.Gray : ConsoleColor.White, ConsoleColor.Black), GameState.ToName(player), message.Replace("\n", "").Replace("\r", ""));
+            MessageParser.ChatBoxMessage += (_, player, message) => UI.GameView.AppendLine(("{0}: {1}", player <= Player.PLAYER_15 && GameState.Players[(int)player].Dead ? GRAY : WHITE, null), GameState.ToName(player), message.Replace("\n", "").Replace("\r", ""));
             // Add missing cases here
             MessageParser.HostClickedOnAddButton += role => GameState.AddRole(role);
             MessageParser.HostClickedOnRemoveButton += slot => GameState.RemoveRole(slot);
@@ -280,22 +299,22 @@ namespace ToSTextClient
             {
                 Timer = 10;
                 TimerText = "Start";
-                UI.GameView.AppendLine(("The game will start in 10 seconds", ConsoleColor.DarkGreen));
+                UI.GameView.AppendLine(("The game will start in 10 seconds", GREEN));
             };
-            MessageParser.CancelStartCooldown += () => UI.GameView.AppendLine(("The start cooldown was cancelled", ConsoleColor.DarkRed));
+            MessageParser.CancelStartCooldown += () => UI.GameView.AppendLine(("The start cooldown was cancelled", RED));
             MessageParser.AssignNewHost += player =>
             {
                 UI.GameView.AppendLine("The host has been repicked");
                 GameState.HostID = player;
             };
-            MessageParser.VotedToRepickHost += votesNeeded => UI.GameView.AppendLine(("{0} votes are needed to repick the host", ConsoleColor.Green, ConsoleColor.Black), votesNeeded);
+            MessageParser.VotedToRepickHost += votesNeeded => UI.GameView.AppendLine(("{0} votes are needed to repick the host", GREEN, null), votesNeeded);
             MessageParser.NoLongerHost += () => GameState.Host = false;
-            MessageParser.DoNotSpam += () => UI.GameView.AppendLine(("Please do not spam the chat", ConsoleColor.Green, ConsoleColor.Black));
-            MessageParser.HowManyPlayersAndGames += (players, games) => UI.GameView.AppendLine(("There are currently {0} players online and {1} games being played", ConsoleColor.Green, ConsoleColor.Black), players, games);
-            MessageParser.SystemMessage += message => UI.GameView.AppendLine(("(System) {0}", ConsoleColor.Yellow, ConsoleColor.Black), message);
+            MessageParser.DoNotSpam += () => UI.GameView.AppendLine(("Please do not spam the chat", GREEN, null));
+            MessageParser.HowManyPlayersAndGames += (players, games) => UI.GameView.AppendLine(("There are currently {0} players online and {1} games being played", GREEN, null), players, games);
+            MessageParser.SystemMessage += message => UI.GameView.AppendLine(("(System) {0}", YELLOW, null), message);
             MessageParser.StringTableMessage += tableMessage => UI.GameView.AppendLine(Localization.Of(tableMessage));
             // Add missing cases here
-            MessageParser.UserInformation += (username, townPoints, meritPoints) => UI.HomeView.ReplaceLine(0, ("{0} ({1} TP, {2} MP)", ConsoleColor.Yellow, ConsoleColor.Black), Username = username, TownPoints = townPoints, MeritPoints = meritPoints);
+            MessageParser.UserInformation += (username, townPoints, meritPoints) => UI.HomeView.ReplaceLine(0, ("{0} ({1} TP, {2} MP)", YELLOW, null), Username = username, TownPoints = townPoints, MeritPoints = meritPoints);
             // Add missing cases here
             MessageParser.ForcedLogout += () =>
             {
@@ -352,7 +371,7 @@ namespace ToSTextClient
             MessageParser.RoleAndPosition += (role, player, target) =>
             {
                 GameState.Role = role;
-                GameState.Self = player;
+                GameState.Self = GameState.Players[(int)player];
                 target.MatchSome(id => GameState.Target = id);
             };
             MessageParser.StartNight += () => GameState.Night++;
@@ -362,7 +381,7 @@ namespace ToSTextClient
                 PlayerState ps = GameState.Players[(int)player];
                 ps.Role = role;
                 ps.Dead = true;
-                UI.GameView.AppendLine(("{0} died", ConsoleColor.DarkRed), GameState.ToName(player));
+                UI.GameView.AppendLine(("{0} died", RED), GameState.ToName(player));
                 GameState.Graveyard.Add(ps);
                 UI.RedrawView(UI.GraveyardView);
                 DeathCause[] causes = deathCauses.ToArray();
@@ -379,40 +398,40 @@ namespace ToSTextClient
             MessageParser.StartVoting += _ =>
             {
                 UI.CommandContext = CommandContext.VOTING;
-                UI.GameView.AppendLine(("{0} votes are needed to lynch someone", ConsoleColor.Green, ConsoleColor.Black), (GameState.Players.Where(ps => !ps.Dead && !ps.Left).Count() + 2) / 2);
+                UI.GameView.AppendLine(("{0} votes are needed to lynch someone", GREEN, null), (GameState.Players.Where(ps => !ps.Dead && !ps.Left).Count() + 2) / 2);
                 Timer = 30;
                 TimerText = "Voting";
             };
             MessageParser.StartDefenseTransition += player =>
             {
                 UI.CommandContext = CommandContext.DISCUSSION;
-                UI.GameView.AppendLine(("{0} has been voted up to the stand", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player));
+                UI.GameView.AppendLine(("{0} has been voted up to the stand", GREEN, null), GameState.ToName(player));
             };
             MessageParser.StartJudgement += () =>
             {
                 UI.CommandContext = CommandContext.JUDGEMENT;
-                UI.GameView.AppendLine(("You may now vote guilty or innocent", ConsoleColor.Green, ConsoleColor.Black));
+                UI.GameView.AppendLine(("You may now vote guilty or innocent", GREEN, null));
                 Timer = 20;
                 TimerText = "Judgement";
             };
             MessageParser.TrialFoundGuilty += (guiltyVotes, innocentVotes) =>
             {
                 UI.CommandContext = CommandContext.DISCUSSION;
-                UI.GameView.AppendLine(("Judgement results: {0} guilty - {1} innocent", ConsoleColor.Green, ConsoleColor.Black), guiltyVotes, innocentVotes);
+                UI.GameView.AppendLine(("Judgement results: {0} guilty - {1} innocent", GREEN, null), guiltyVotes, innocentVotes);
                 Timer = 5;
                 TimerText = "Last Words";
             };
             MessageParser.TrialFoundNotGuilty += (guiltyVotes, innocentVotes) =>
             {
                 UI.CommandContext = CommandContext.DISCUSSION;
-                UI.GameView.AppendLine(("Judgement results: {0} guilty - {1} innocent", ConsoleColor.Green, ConsoleColor.Black), guiltyVotes, innocentVotes);
+                UI.GameView.AppendLine(("Judgement results: {0} guilty - {1} innocent", GREEN, null), guiltyVotes, innocentVotes);
             };
-            MessageParser.LookoutNightAbilityMessage += player => UI.GameView.AppendLine(("{0} visited your target", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player));
-            MessageParser.UserVoted += (player, voted, votes) => UI.GameView.AppendLine(("{0} has placed {2} votes against {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player), GameState.ToName(voted), votes);
-            MessageParser.UserCanceledVote += (player, voted, votes) => UI.GameView.AppendLine(("{0} has cancelled their {2} votes against {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player), GameState.ToName(voted), votes);
-            MessageParser.UserChangedVote += (player, voted, _, votes) => UI.GameView.AppendLine(("{0} has changed their {2} votes to be against {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player), GameState.ToName(voted), votes);
-            MessageParser.UserDied += _ => UI.GameView.AppendLine(("You have died", ConsoleColor.DarkRed));
-            MessageParser.Resurrection += (player, role) => UI.GameView.AppendLine(("{0} ({1}) has been resurrected", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player), role.ToString().ToDisplayName());
+            MessageParser.LookoutNightAbilityMessage += player => UI.GameView.AppendLine(("{0} visited your target", GREEN, null), GameState.ToName(player));
+            MessageParser.UserVoted += (player, voted, votes) => UI.GameView.AppendLine(("{0} has placed {2} votes against {1}", GREEN, null), GameState.ToName(player), GameState.ToName(voted), votes);
+            MessageParser.UserCanceledVote += (player, voted, votes) => UI.GameView.AppendLine(("{0} has cancelled their {2} votes against {1}", GREEN, null), GameState.ToName(player), GameState.ToName(voted), votes);
+            MessageParser.UserChangedVote += (player, voted, _, votes) => UI.GameView.AppendLine(("{0} has changed their {2} votes to be against {1}", GREEN, null), GameState.ToName(player), GameState.ToName(voted), votes);
+            MessageParser.UserDied += _ => UI.GameView.AppendLine(("You have died", RED));
+            MessageParser.Resurrection += (player, role) => UI.GameView.AppendLine(("{0} ({1}) has been resurrected", GREEN, null), GameState.ToName(player), role.ToString().ToDisplayName());
             MessageParser.TellRoleList += roles => GameState.Roles = roles.ToArray();
             MessageParser.UserChosenName += (tableMessage, player, name) =>
             {
@@ -430,42 +449,42 @@ namespace ToSTextClient
                 }
                 UI.OpenSideView(UI.TeamView);
             };
-            MessageParser.TellTownAmnesiacChangedRole += role => UI.GameView.AppendLine(("An Amnesiac has remembered {0}", ConsoleColor.Green, ConsoleColor.Black), role.ToString().ToDisplayName());
+            MessageParser.TellTownAmnesiacChangedRole += role => UI.GameView.AppendLine(("An Amnesiac has remembered {0}", GREEN, null), role.ToString().ToDisplayName());
             MessageParser.AmnesiacChangedRole += (role, target) =>
             {
-                UI.GameView.AppendLine(("You have attempted to remember who you were!", ConsoleColor.DarkRed));
+                UI.GameView.AppendLine(("You have attempted to remember who you were!", RED));
                 GameState.Role = role;
                 target.MatchSome(id => GameState.Target = id);
             };
-            MessageParser.BroughtBackToLife += () => UI.GameView.AppendLine(("You have been resurrected by a Retributionist!", ConsoleColor.Green, ConsoleColor.Black));
+            MessageParser.BroughtBackToLife += () => UI.GameView.AppendLine(("You have been resurrected by a Retributionist!", GREEN, null));
             MessageParser.StartFirstDay += () => GameState.Day = 1;
             MessageParser.BeingJailed += () =>
             {
                 GameState.NightState |= NightState.JAILED;
-                UI.GameView.AppendLine(("You were hauled off to jail", ConsoleColor.Gray));
+                UI.GameView.AppendLine(("You were hauled off to jail", GRAY));
             };
             MessageParser.JailedTarget += (player, canExecute, executedTown) =>
             {
                 UI.GameView.AppendLine("You have dragged {0} off to jail", GameState.ToName(player));
                 UI.GameView.AppendLine(canExecute ? "You may execute tonight" : executedTown ? "You cannot execute any more as you have executed a Town member" : "You cannot execute tonight");
             };
-            MessageParser.UserJudgementVoted += player => UI.GameView.AppendLine(("{0} has voted", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player));
-            MessageParser.UserChangedJudgementVote += player => UI.GameView.AppendLine(("{0} has changed their voted", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player));
-            MessageParser.UserCanceledJudgementVote += player => UI.GameView.AppendLine(("{0} has cancelled their vote", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player));
-            MessageParser.TellJudgementVotes += (player, vote) => UI.GameView.AppendLine(("{0} voted {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player), vote.ToString().ToLower().Replace('_', ' '));
-            MessageParser.ExecutionerCompletedGoal += () => UI.GameView.AppendLine(("You have successfully gotten your target lynched", ConsoleColor.DarkGreen));
-            MessageParser.JesterCompletedGoal += () => UI.GameView.AppendLine(("You have successfully gotten yourself lynched", ConsoleColor.DarkGreen));
-            MessageParser.MayorRevealed += player => UI.GameView.AppendLine(("{0} has revealed themselves as the mayor", ConsoleColor.Magenta, ConsoleColor.Black), GameState.ToName(player));
+            MessageParser.UserJudgementVoted += player => UI.GameView.AppendLine(("{0} has voted", GREEN, null), GameState.ToName(player));
+            MessageParser.UserChangedJudgementVote += player => UI.GameView.AppendLine(("{0} has changed their voted", GREEN, null), GameState.ToName(player));
+            MessageParser.UserCanceledJudgementVote += player => UI.GameView.AppendLine(("{0} has cancelled their vote", GREEN, null), GameState.ToName(player));
+            MessageParser.TellJudgementVotes += (player, vote) => UI.GameView.AppendLine(("{0} voted {1}", GREEN, null), GameState.ToName(player), vote.ToString().ToLower().Replace('_', ' '));
+            MessageParser.ExecutionerCompletedGoal += () => UI.GameView.AppendLine(("You have successfully gotten your target lynched", GREEN));
+            MessageParser.JesterCompletedGoal += () => UI.GameView.AppendLine(("You have successfully gotten yourself lynched", GREEN));
+            MessageParser.MayorRevealed += player => UI.GameView.AppendLine(("{0} has revealed themselves as the mayor", MAGENTA, null), GameState.ToName(player));
             // Add missing cases here
-            MessageParser.DisguiserStoleYourIdentity += player => UI.GameView.AppendLine(("A disguiser stole your identity: you are now {0}", ConsoleColor.DarkRed), GameState.ToName(player));
-            MessageParser.DisguiserChangedIdentity += player => UI.GameView.AppendLine(("You have successfully disguised yourself as {0}", ConsoleColor.DarkRed), GameState.ToName(player));
-            MessageParser.DisguiserChangedUpdateMafia += (player, disguiser) => UI.GameView.AppendLine(("{1} has successfully disguised themselves as {0}", ConsoleColor.DarkRed), GameState.ToName(player), GameState.ToName(disguiser));
-            MessageParser.MediumIsTalkingToUs += () => UI.GameView.AppendLine(("A medium is talking to you", ConsoleColor.Green, ConsoleColor.Black));
-            MessageParser.MediumCommunicating += () => UI.GameView.AppendLine(("You have opened a communication with the living", ConsoleColor.Green, ConsoleColor.Black));
+            MessageParser.DisguiserStoleYourIdentity += player => UI.GameView.AppendLine(("A disguiser stole your identity: you are now {0}", RED), GameState.ToName(player));
+            MessageParser.DisguiserChangedIdentity += player => UI.GameView.AppendLine(("You have successfully disguised yourself as {0}", RED), GameState.ToName(player));
+            MessageParser.DisguiserChangedUpdateMafia += (player, disguiser) => UI.GameView.AppendLine(("{1} has successfully disguised themselves as {0}", RED), GameState.ToName(player), GameState.ToName(disguiser));
+            MessageParser.MediumIsTalkingToUs += () => UI.GameView.AppendLine(("A medium is talking to you", GREEN, null));
+            MessageParser.MediumCommunicating += () => UI.GameView.AppendLine(("You have opened a communication with the living", GREEN, null));
             MessageParser.TellLastWill += (Player player, string lastWill) => lastWill.SomeNotNull().Match(lw => GameState.Players[(int)player].LastWill = lw, () => UI.GameView.AppendLine("We could not find a last will"));
             MessageParser.HowManyAbilitiesLeft += abilitiesLeft => UI.GameView.AppendLine("Abilities left: {0}", abilitiesLeft);
             MessageParser.MafiaTargeting += (player, role, target, _1, _2, _3) => UI.GameView.AppendLine(target == Player.JAILOR ? "{0} ({1}) has unset their target" : "{0} ({1}) has set their target to {2}", GameState.ToName(player), role.ToString().ToDisplayName(), GameState.ToName(target));
-            MessageParser.TellJanitorTargetsRole += role => UI.GameView.AppendLine(("You secretly know that your target's role was {0}", ConsoleColor.Green, ConsoleColor.Black), role.ToString().ToDisplayName());
+            MessageParser.TellJanitorTargetsRole += role => UI.GameView.AppendLine(("You secretly know that your target's role was {0}", GREEN, null), role.ToString().ToDisplayName());
             MessageParser.TellJanitorTargetsWill += (player, lastWill) => GameState.Players[(int)player].LastWill = lastWill;
             MessageParser.SomeoneHasWon += (faction, winners) =>
             {
@@ -494,16 +513,16 @@ namespace ToSTextClient
             };
             MessageParser.ExecutionerConvertedToJester += () =>
             {
-                UI.GameView.AppendLine(("Your target has died", ConsoleColor.DarkRed));
+                UI.GameView.AppendLine(("Your target has died", RED));
                 GameState.Role = Role.JESTER;
             };
             MessageParser.AmnesiacBecameMafiaOrWitch += (player, role) =>
             {
-                UI.GameView.AppendLine(("{0} has remembered {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player), role.ToString().ToDisplayName());
+                UI.GameView.AppendLine(("{0} has remembered {1}", GREEN, null), GameState.ToName(player), role.ToString().ToDisplayName());
                 GameState.Players[(int)player].Role = role;
             };
-            MessageParser.UserDisconnected += player => UI.GameView.AppendLine(("{0} has left the game", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player));
-            MessageParser.MafiaWasJailed += player => UI.GameView.AppendLine(("{0} has been dragged off to jail", ConsoleColor.DarkRed), GameState.ToName(GameState.Players[(int)player]));
+            MessageParser.UserDisconnected += player => UI.GameView.AppendLine(("{0} has left the game", GREEN, null), GameState.ToName(player));
+            MessageParser.MafiaWasJailed += player => UI.GameView.AppendLine(("{0} has been dragged off to jail", RED), GameState.ToName(GameState.Players[(int)player]));
             MessageParser.InvalidNameMessage += status => UI.StatusLine = string.Format("Invalid name: {0}", status);
             MessageParser.StartNightTransition += () => UI.CommandContext = CommandContext.DISCUSSION;
             MessageParser.StartDayTransition += deaths => deaths.ForEach(player => GameState.Players[(int)player].Dead = true);
@@ -515,51 +534,51 @@ namespace ToSTextClient
             {
                 Timer = 20;
                 TimerText = "Defense";
-                UI.GameView.AppendLine(("What is your defense?", ConsoleColor.Green, ConsoleColor.Black));
+                UI.GameView.AppendLine(("What is your defense?", GREEN, null));
             };
             MessageParser.UserLeftDuringSelection += player =>
             {
-                UI.GameView.AppendLine(("{0} left during selection", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player));
+                UI.GameView.AppendLine(("{0} left during selection", GREEN, null), GameState.ToName(player));
                 GameState.Players[(int)player].Left = true;
             };
-            MessageParser.VigilanteKilledTown += () => UI.GameView.AppendLine(("You put your gun away out of fear of shooting another town member", ConsoleColor.Green, ConsoleColor.Black));
-            MessageParser.NotifyUsersOfPrivateMessage += (sender, receiver) => UI.GameView.AppendLine(("{0} is whispering to {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(sender), GameState.ToName(receiver));
+            MessageParser.VigilanteKilledTown += () => UI.GameView.AppendLine(("You put your gun away out of fear of shooting another town member", GREEN, null));
+            MessageParser.NotifyUsersOfPrivateMessage += (sender, receiver) => UI.GameView.AppendLine(("{0} is whispering to {1}", GREEN, null), GameState.ToName(sender), GameState.ToName(receiver));
             MessageParser.PrivateMessage += (type, player, message, receiver) =>
             {
                 switch (type)
                 {
                     case PrivateMessageType.TO:
-                        UI.GameView.AppendLine(("To {0}: {1}", ConsoleColor.Magenta, ConsoleColor.Black), GameState.ToName(player), message);
+                        UI.GameView.AppendLine(("To {0}: {1}", MAGENTA, null), GameState.ToName(player), message);
                         break;
                     case PrivateMessageType.FROM:
-                        UI.GameView.AppendLine(("From {0}: {1}", ConsoleColor.Magenta, ConsoleColor.Black), GameState.ToName(player), message);
+                        UI.GameView.AppendLine(("From {0}: {1}", MAGENTA, null), GameState.ToName(player), message);
                         break;
                     case PrivateMessageType.FROM_TO:
-                        UI.GameView.AppendLine(("From {0} to {1}: {2}", ConsoleColor.Magenta, ConsoleColor.Black), GameState.ToName(player), GameState.ToName(receiver.Value), message);
+                        UI.GameView.AppendLine(("From {0} to {1}: {2}", MAGENTA, null), GameState.ToName(player), GameState.ToName(receiver.Value), message);
                         break;
                 }
             };
             MessageParser.EarnedAchievements161 += achievements => achievements.ForEach(id =>
             {
                 EarnedAchievements.Add(id);
-                UI.GameView.AppendLine(("You have earned the achievement {0}", ConsoleColor.DarkGreen), id.ToString().ToDisplayName());
+                UI.GameView.AppendLine(("You have earned the achievement {0}", GREEN), id.ToString().ToDisplayName());
             });
-            MessageParser.AuthenticationFailed += (result, timeout) => UI.AuthView.Status = (string.Format(timeout != null ? "Authentication failed: {0} for {1} seconds" : "Authentication failed: {0}", result.ToString().ToDisplayName(), timeout), ConsoleColor.DarkRed);
-            MessageParser.SpyNightAbilityMessage += (isCoven, player) => UI.GameView.AppendLine(("A member of the {0} visited {1}", ConsoleColor.Green, ConsoleColor.Black), isCoven ? "Coven" : "Mafia", GameState.ToName(player));
-            MessageParser.OneDayBeforeStalemate += () => UI.GameView.AppendLine(("If noone dies by tomorrow, the game will end in a draw", ConsoleColor.Green, ConsoleColor.Black));
+            MessageParser.AuthenticationFailed += (result, timeout) => UI.AuthView.Status = (string.Format(timeout != null ? "Authentication failed: {0} for {1} seconds" : "Authentication failed: {0}", result.ToString().ToDisplayName(), timeout), RED);
+            MessageParser.SpyNightAbilityMessage += (isCoven, player) => UI.GameView.AppendLine(("A member of the {0} visited {1}", GREEN, null), isCoven ? "Coven" : "Mafia", GameState.ToName(player));
+            MessageParser.OneDayBeforeStalemate += () => UI.GameView.AppendLine(("If noone dies by tomorrow, the game will end in a draw", GREEN, null));
             // Add missing cases here
             MessageParser.FullMoonNight += () => UI.GameView.AppendLine(Localization.Of(LocalizationTable.FULL_MOON));
-            MessageParser.Identify += message => UI.GameView.AppendLine((message, ConsoleColor.Yellow, ConsoleColor.Black));
+            MessageParser.Identify += message => UI.GameView.AppendLine((message, YELLOW, null));
             MessageParser.EndGameInfo += (timeout, gameMode, winner, won, eloChange, mpGain, players) =>
             {
                 UI.CommandContext = CommandContext.POST_GAME;
-                UI.GameView.AppendLine(("Entered the post-game lobby", ConsoleColor.Green, ConsoleColor.Black));
+                UI.GameView.AppendLine(("Entered the post-game lobby", GREEN, null));
                 // TODO: Display the end game info
             };
             // Add missing cases here
             MessageParser.VampirePromotion += () =>
             {
-                UI.GameView.AppendLine(("You have been bitten by a Vampire", ConsoleColor.DarkRed));
+                UI.GameView.AppendLine(("You have been bitten by a Vampire", RED));
                 GameState.Role = Role.VAMPIRE;
             };
             MessageParser.OtherVampires += vampires =>
@@ -581,33 +600,33 @@ namespace ToSTextClient
             MessageParser.CanVampiresConvert += canConvert => UI.GameView.AppendLine(canConvert ? "You may bite someone tonight" : "You cannot bite anyone tonight");
             MessageParser.VampireDied += (player, newYoungest) =>
             {
-                UI.GameView.AppendLine(("{0}, a fellow Vampire, died", ConsoleColor.DarkRed), GameState.ToName(player));
+                UI.GameView.AppendLine(("{0}, a fellow Vampire, died", RED), GameState.ToName(player));
                 newYoungest.MatchSome(id => GameState.Players[(int)id].Youngest = true);
             };
             MessageParser.VampireHunterPromoted += () =>
             {
-                UI.GameView.AppendLine(("All vampires have died, so you have become a vigilante with 1 bullet", ConsoleColor.DarkGreen));
+                UI.GameView.AppendLine(("All vampires have died, so you have become a vigilante with 1 bullet", GREEN));
                 GameState.Role = Role.VIGILANTE;
             };
-            MessageParser.VampireVisitedMessage += player => UI.GameView.AppendLine(("Vampires visited {0}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player));
+            MessageParser.VampireVisitedMessage += player => UI.GameView.AppendLine(("Vampires visited {0}", GREEN, null), GameState.ToName(player));
             // Add missing cases here
-            MessageParser.TransporterNotification += (player1, player2) => UI.GameView.AppendLine(("A transporter transported {0} and {1}", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player1), GameState.ToName(player2));
+            MessageParser.TransporterNotification += (player1, player2) => UI.GameView.AppendLine(("A transporter transported {0} and {1}", GREEN, null), GameState.ToName(player1), GameState.ToName(player2));
             // Add missing cases here
-            MessageParser.TrackerNightAbility += player => UI.GameView.AppendLine(("{0} was visited by your target", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player));
-            MessageParser.AmbusherNightAbility += player => UI.GameView.AppendLine(("{0} was seen preparing an ambush while visiting your target", ConsoleColor.DarkRed), GameState.ToName(player));
-            MessageParser.GuardianAngelProtection += player => UI.GameView.AppendLine(("{0} was protected by a Guardian Angel", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player));
+            MessageParser.TrackerNightAbility += player => UI.GameView.AppendLine(("{0} was visited by your target", GREEN, null), GameState.ToName(player));
+            MessageParser.AmbusherNightAbility += player => UI.GameView.AppendLine(("{0} was seen preparing an ambush while visiting your target", RED), GameState.ToName(player));
+            MessageParser.GuardianAngelProtection += player => UI.GameView.AppendLine(("{0} was protected by a Guardian Angel", GREEN, null), GameState.ToName(player));
             MessageParser.PirateDuel += () =>
             {
                 GameState.NightState |= NightState.DUEL_DEFENDING;
-                UI.GameView.AppendLine(("You have been challenged to a duel by the Pirate", ConsoleColor.DarkRed));
+                UI.GameView.AppendLine(("You have been challenged to a duel by the Pirate", RED));
             };
             MessageParser.DuelTarget += player =>
             {
                 GameState.NightState |= NightState.DUEL_ATTACKING;
-                UI.GameView.AppendLine(("You have challenged {0} to a duel", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player));
+                UI.GameView.AppendLine(("You have challenged {0} to a duel", GREEN, null), GameState.ToName(player));
             };
             // Add missing cases here
-            MessageParser.HasNecronomicon += nightsUntil => UI.GameView.AppendLine((nightsUntil != null ? "{0} nights until the Coven possess the Necronomicon" : "The Coven now possess the Necronomicon", ConsoleColor.Green, ConsoleColor.Black), nightsUntil);
+            MessageParser.HasNecronomicon += nightsUntil => UI.GameView.AppendLine((nightsUntil != null ? "{0} nights until the Coven possess the Necronomicon" : "The Coven now possess the Necronomicon", GREEN, null), nightsUntil);
             MessageParser.OtherWitches += coven =>
             {
                 GameState.Team.Clear();
@@ -619,19 +638,19 @@ namespace ToSTextClient
                 }
                 UI.OpenSideView(UI.TeamView);
             };
-            MessageParser.PsychicNightAbility += (player1, player2, player3) => UI.GameView.AppendLine((player3 != null ? "A vision revealed that {0}, {1}, or {2} is evil" : "A vision revealed that {0}, or {1} is good", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player1), GameState.ToName(player2), GameState.ToName(player3 ?? default));
-            MessageParser.TrapperNightAbility += role => UI.GameView.AppendLine(("{0} has triggered your trap", ConsoleColor.DarkRed), role.ToString().ToDisplayName());
-            MessageParser.TrapperTrapStatus += status => UI.GameView.AppendLine(("Trap status: {0}", ConsoleColor.Green, ConsoleColor.Black), status.ToString().ToDisplayName());
+            MessageParser.PsychicNightAbility += (player1, player2, player3) => UI.GameView.AppendLine((player3 != null ? "A vision revealed that {0}, {1}, or {2} is evil" : "A vision revealed that {0}, or {1} is good", GREEN, null), GameState.ToName(player1), GameState.ToName(player2), GameState.ToName(player3 ?? default));
+            MessageParser.TrapperNightAbility += role => UI.GameView.AppendLine(("{0} has triggered your trap", RED), role.ToString().ToDisplayName());
+            MessageParser.TrapperTrapStatus += status => UI.GameView.AppendLine(("Trap status: {0}", GREEN, null), status.ToString().ToDisplayName());
             MessageParser.PestilenceConversion += () => GameState.Role = Role.PESTILENCE;
-            MessageParser.JuggernautKillCount += kills => UI.GameView.AppendLine(("You have obtained {0} kills", ConsoleColor.Green, ConsoleColor.Black), kills);
-            MessageParser.CovenGotNecronomicon += (player, newPlayer) => UI.GameView.AppendLine(("{0} now has the Necronomicon", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(newPlayer ?? player));
+            MessageParser.JuggernautKillCount += kills => UI.GameView.AppendLine(("You have obtained {0} kills", GREEN, null), kills);
+            MessageParser.CovenGotNecronomicon += (player, newPlayer) => UI.GameView.AppendLine(("{0} now has the Necronomicon", GREEN, null), GameState.ToName(newPlayer ?? player));
             MessageParser.GuardianAngelPromoted += () =>
             {
-                UI.GameView.AppendLine(("You failed to protect your target", ConsoleColor.DarkRed));
+                UI.GameView.AppendLine(("You failed to protect your target", RED));
                 GameState.Role = Role.SURVIVOR;
             };
-            MessageParser.VIPTarget += player => UI.GameView.AppendLine(("{0} is the VIP", ConsoleColor.Green, ConsoleColor.Black), GameState.ToName(player));
-            MessageParser.PirateDuelOutcome += (attack, defense) => UI.GameView.AppendLine(("Your {1} against the Pirate's {0}: you have {2} the duel", ConsoleColor.DarkRed), attack, defense, (byte)attack == ((byte)defense + 1) % 3 ? "lost" : "won");
+            MessageParser.VIPTarget += player => UI.GameView.AppendLine(("{0} is the VIP", GREEN, null), GameState.ToName(player));
+            MessageParser.PirateDuelOutcome += (attack, defense) => UI.GameView.AppendLine(("Your {1} against the Pirate's {0}: you have {2} the duel", RED), attack, defense, (byte)attack == ((byte)defense + 1) % 3 ? "lost" : "won");
             // Add missing cases here
             MessageParser.ActiveGameModes += gameModes =>
             {
@@ -644,13 +663,13 @@ namespace ToSTextClient
                 OwnsCoven = flags.HasFlag(AccountFlags.OWNS_COVEN);
                 UI.RedrawView(UI.GameModeView);
             };
-            MessageParser.ZombieRotted += player => UI.GameView.AppendLine(("You may no longer use {0}'s night ability", ConsoleColor.Green, ConsoleColor.Black), player);
-            MessageParser.LoverTarget += player => UI.GameView.AppendLine(("{0} is your lover", ConsoleColor.Green, ConsoleColor.Black), player);
-            MessageParser.PlagueSpread += player => UI.GameView.AppendLine(("{0} has been infected with the plague", ConsoleColor.Green, ConsoleColor.Black), player);
-            MessageParser.RivalTarget += player => UI.GameView.AppendLine(("{0} is your rival", ConsoleColor.Green, ConsoleColor.Black), player);
+            MessageParser.ZombieRotted += player => UI.GameView.AppendLine(("You may no longer use {0}'s night ability", GREEN, null), player);
+            MessageParser.LoverTarget += player => UI.GameView.AppendLine(("{0} is your lover", GREEN, null), player);
+            MessageParser.PlagueSpread += player => UI.GameView.AppendLine(("{0} has been infected with the plague", GREEN, null), player);
+            MessageParser.RivalTarget += player => UI.GameView.AppendLine(("{0} is your rival", GREEN, null), player);
             // Add missing cases here
             MessageParser.JailorDeathNote += (player, _, reason) => GameState.Players[(int)player].DeathNote = reason.ToString().ToDisplayName();
-            MessageParser.Disconnected += reason => UI.AuthView.Status = ((FormattedString)("Disconnected: {0}", ConsoleColor.DarkRed)).Format(reason.ToString().ToDisplayName());
+            MessageParser.Disconnected += reason => UI.AuthView.Status = FormattedString.Format(("Disconnected: {0}", RED), reason.ToString().ToDisplayName());
             MessageParser.SpyNightInfo += tableMessages => tableMessages.ForEach(tableMessage => UI.GameView.AppendLine(Localization.OfSpyResult(tableMessage)));
             // Add missing cases here
         }
@@ -855,23 +874,9 @@ namespace ToSTextClient
 
         public static string[] SplitCommand(this string input) => input.Split(' ');
 
+        public static string Limit(this string value, int length) => value.Length > length ? value.Substring(0, length) : value;
+
         public static string PadRightHard(this string value, int length) => value.Length > length ? value.Substring(0, length) : value.PadRight(length);
-
-        public static IEnumerable<T> ListHeader<T>(this IEnumerable<T> enumerable, T value)
-        {
-            bool start = true;
-            foreach (T t in enumerable)
-            {
-                if (start) yield return value;
-                start = false;
-                yield return t;
-            }
-        }
-
-        public static void ForEach<T>(this IEnumerable<T> enumerable, Action<T> action)
-        {
-            foreach (T t in enumerable) action(t);
-        }
 
         public static string AddSpacing(this string value)
         {
@@ -884,6 +889,21 @@ namespace ToSTextClient
             return sb.ToString();
         }
 
-        internal static FormattedString Format(this FormattedString value, params object[] args) => new FormattedString(string.Format(value.Value, args), value.Foreground, value.Background);
+        public static IEnumerable<T> Prepend<T>(this IEnumerable<T> enumerable, T value)
+        {
+            yield return value;
+            foreach (T t in enumerable) yield return t;
+        }
+
+        public static IEnumerable<T> Append<T>(this IEnumerable<T> enumerable, T value)
+        {
+            foreach (T t in enumerable) yield return t;
+            yield return value;
+        }
+
+        public static void ForEach<T>(this IEnumerable<T> enumerable, Action<T> action)
+        {
+            foreach (T t in enumerable) action(t);
+        }
     }
 }

@@ -1,5 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using System.Text;
 using ToSParser;
+
+using Console = Colorful.Console;
 
 namespace ToSTextClient
 {
@@ -85,37 +91,117 @@ namespace ToSTextClient
 
     class FormattedString
     {
-        public string Value { get; }
-        public ConsoleColor Foreground { get; }
-        public ConsoleColor Background { get; }
+        public string RawValue => values.Select(v => v.raw).Aggregate(new StringBuilder(), (sb, raw) => sb.Append(raw)).ToString();
+        protected (string raw, Color? fg, Color? bg)[] values;
 
-        public FormattedString(string value)
+        protected FormattedString(params (string raw, Color? fg, Color? bg)[] values) => this.values = values;
+
+        public void Render(int width)
         {
-            Value = value;
-            Foreground = ConsoleColor.White;
-            Background = ConsoleColor.Black;
+            for (int index = 0; index < values.Length && width > 0; width -= values[index++].raw.Length)
+            {
+                Console.ForegroundColor = values[index].fg ?? Color.White;
+                Console.BackgroundColor = values[index].bg ?? Color.Black;
+                Console.Write(values[index].raw.Limit(width));
+            }
+            if (width > 0) Console.Write("".PadRight(width));
+            Console.ForegroundColor = Color.White;
+            Console.BackgroundColor = Color.Black;
+            //Console.ResetColor();   // Reset colour after padding to allow padding to have last set BG colour
         }
 
-        public FormattedString(string value, ConsoleColor bg)
+        public override string ToString() => RawValue;
+
+        internal static FormattedString Format(FormattedString format, params object[] args)
         {
-            Value = value;
-            Foreground = ConsoleColor.White;
-            Background = bg;
+            if (format == null) return null;
+            return new FormattedString(format.values.SelectMany(v => Format(v, args)).ToArray());
         }
 
-        public FormattedString(string value, ConsoleColor fg, ConsoleColor bg)
+        private static IEnumerable<(string raw, Color? fg, Color? bg)> Format((string raw, Color? fg, Color? bg) value, params object[] args)
         {
-            Value = value;
-            Foreground = fg;
-            Background = bg;
+            StringBuilder sb = new StringBuilder(value.raw.Length);
+            StringBuilder nb = new StringBuilder();
+            StringBuilder eb = new StringBuilder();
+            bool inBlock = false, indexEnd = false;
+            foreach (char c in value.raw)
+            {
+                switch (c)
+                {
+                    default:
+                        if (inBlock)
+                        {
+                            if (indexEnd) eb.Append(c);
+                            else nb.Append(c);
+                        }
+                        else sb.Append(c);
+                        break;
+                    case '{':
+                        if (inBlock)
+                        {
+                            sb.Append('{');
+                            sb.Append(nb.ToString());
+                            if (indexEnd)
+                            {
+                                sb.Append(':');
+                                sb.Append(eb.ToString());
+                            }
+                        }
+                        nb.Clear();
+                        eb.Clear();
+                        inBlock = true;
+                        indexEnd = false;
+                        break;
+                    case '}':
+                        if (inBlock && uint.TryParse(nb.ToString(), out uint parsed) && parsed < args.Length && args[parsed] is FormattedString formatted)
+                        {
+                            yield return (string.Format(sb.ToString(), args), value.fg, value.bg);
+                            sb.Clear();
+                            foreach ((string raw, Color? fg, Color? bg) rawValue in formatted.values) yield return rawValue;
+                        }
+                        else if (inBlock)
+                        {
+                            sb.Append('{');
+                            sb.Append(nb.ToString());
+                            if (indexEnd)
+                            {
+                                sb.Append(':');
+                                sb.Append(eb.ToString());
+                            }
+                            sb.Append('}');
+                        }
+                        inBlock = false;
+                        break;
+                    case ':':
+                        if (!inBlock || indexEnd) goto default;
+                        indexEnd = true;
+                        break;
+                }
+            }
+            yield return (string.Format(sb.ToString(), args), value.fg, value.bg);
         }
 
-        public static implicit operator FormattedString(string value) => new FormattedString(value);
-        public static implicit operator FormattedString((string value, ConsoleColor bg) value) => new FormattedString(value.value, value.bg);
-        public static implicit operator FormattedString((string value, ConsoleColor fg, ConsoleColor bg) value) => new FormattedString(value.value, value.fg, value.bg);
+        public static FormattedString From(params (string raw, Color? fg, Color? bg)[] values) => new FormattedString(values);
 
-        public static FormattedString operator +(FormattedString a, string b) => new FormattedString(a.Value + b, a.Foreground, a.Background);
-        public static FormattedString operator +(string a, FormattedString b) => new FormattedString(a + b.Value, b.Foreground, b.Background);
+        public static implicit operator FormattedString(string value) => new FormattedString((value, null, null));
+        public static implicit operator FormattedString((string value, Color? bg) value) => new FormattedString((value.value, null, value.bg));
+        public static implicit operator FormattedString((string value, Color? fg, Color? bg) value) => new FormattedString(value);
+
+        public static FormattedString operator +(FormattedString a, string b)
+        {
+            FormattedString result = new FormattedString(new(string raw, Color? fg, Color? bg)[a.values.Length]);
+            Array.Copy(a.values, result.values, result.values.Length);
+            result.values[result.values.Length - 1].raw += b;
+            return result;
+        }
+        public static FormattedString operator +(string a, FormattedString b)
+        {
+            FormattedString result = new FormattedString(new (string raw, Color? fg, Color? bg)[b.values.Length]);
+            Array.Copy(b.values, result.values, result.values.Length);
+            result.values[0].raw = a + result.values[0].raw;
+            return result;
+        }
+        public static FormattedString operator +(FormattedString a, FormattedString b) => new FormattedString(a.values.Concat(b.values).ToArray());
     }
 
     enum RedrawResult

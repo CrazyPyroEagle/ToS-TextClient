@@ -8,6 +8,8 @@ using System.Security;
 using System.Text;
 using ToSParser;
 
+using Console = Colorful.Console;
+
 namespace ToSTextClient
 {
     class ConsoleUI : ITextUI
@@ -94,8 +96,8 @@ namespace ToSTextClient
             HomeView = new TextView(this, UpdateView, CommandContext.HOME.Set(), 60, 2, new UserInfoView(this, 20, 2));
             GameView = new TextView(this, UpdateView, CommandExtensions.IsInLobbyOrGame, 60, 20, new NameView(this, 23, 1));
             RegisterView(GameModeView = new ListView<GameMode>(" # Game Modes", () => Game.ActiveGameModes.Where(gm => Game.OwnsCoven || !gm.RequiresCoven()).ToList(), gm => gm.ToString().ToDisplayName(), CommandContext.HOME.Set(), 25), "game modes", "modes");
-            RegisterView(PlayerListView = new ListView<PlayerState>(" # Players", () => Game.GameState.Players, p => p.Dead ? "" : Game.GameState.ToName(p.Self, true), CommandExtensions.IsInLobbyOrGame, 25), "player list", "players", "playerlist");
-            RegisterView(RoleListView = new ListView<Role>(" # Role List", () => Game.GameState.Roles, r => r.ToString().ToDisplayName(), CommandExtensions.IsInLobbyOrGame, 25), "role list", "roles", "rolelist");
+            RegisterView(PlayerListView = new ListView<PlayerState>(" # Players", () => Game.GameState.Players, p => p.Dead ? "" : Game.GameState.ToName(p.ID, true), CommandExtensions.IsInLobbyOrGame, 25), "player list", "players", "playerlist");
+            RegisterView(RoleListView = new ListView<Role>(" # Role List", () => Game.GameState.Roles, r => Game.Localization.Of(r), CommandExtensions.IsInLobbyOrGame, 25), "role list", "roles", "rolelist");
             RegisterView(GraveyardView = new ListView<PlayerState>(" # Graveyard", () => Game.GameState.Graveyard, ps => Game.GameState.ToName(ps, true), CommandExtensions.IsInGame, 40), "graveyard", "graveyard");
             RegisterView(TeamView = new ListView<PlayerState>(" # Team", () => Game.GameState.Team, ps => !ps.Dead || ps.Role == Role.DISGUISER ? Game.GameState.ToName(ps, true) : "", CommandExtensions.IsInGame, 40), "team");
             RegisterView(LastWillView = new WillView(this), "LW/DN", "lw", "dn", "lastwill", "deathnote");
@@ -174,6 +176,9 @@ namespace ToSTextClient
                 RedrawCursor();
             }), "fw", "forgedwill");
             RegisterCommand(new Command<Option<Player>>("Say your will or whisper it to {0}", CommandExtensions.IsInGame, ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) => opTarget.Match(target => Game.Parser.SendPrivateMessage(target, Game.GameState.LastWill), () => Game.Parser.SendChatBoxMessage(Game.GameState.LastWill))), "slw", "saylw", "saylastwill");
+
+            Console.ForegroundColor = TextClient.WHITE;
+            Console.BackgroundColor = TextClient.BLACK;
         }
 
         public void Run()
@@ -240,7 +245,7 @@ namespace ToSTextClient
             }
         }
 
-        public void AudioAlert() => Console.Beep();
+        public void AudioAlert() => System.Console.Beep();
 
         public void SetMainView(IView iview)
         {
@@ -348,14 +353,11 @@ namespace ToSTextClient
                     foreach (AbstractView view in sideViews.Where(view => view.IsAllowed(_CommandContext)))
                     {
                         Console.CursorLeft = fullWidth - sideWidth - 1;
-                        if (lastSideHeight != 0)
+                        if (lastSideHeight != 0 && sideHeight++ < fullHeight - pinnedHeight)
                         {
-                            if (sideHeight++ < fullHeight - pinnedHeight)
-                            {
-                                Console.CursorTop = fullHeight - sideHeight - pinnedHeight;
-                                Console.Write("".PadRight(sideWidth, '-'));
-                                Console.CursorLeft = fullWidth - sideWidth - 1;
-                            }
+                            Console.CursorTop = fullHeight - sideHeight - pinnedHeight;
+                            Console.Write("".PadRight(sideWidth, '-'));
+                            Console.CursorLeft = fullWidth - sideWidth - 1;
                         }
                         lock (view)
                         {
@@ -389,13 +391,14 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
+                Console.CursorVisible = false;
                 Console.CursorTop = fullHeight - 1;
                 Console.CursorLeft = 0;
-                Console.ForegroundColor = ConsoleColor.White;
+                Console.ForegroundColor = TextClient.WHITE;
                 Console.Write(commandMode ? "/ " : "> ");
-                if (inputContext != null || inputBuffer.Length == 0) Console.ForegroundColor = ConsoleColor.Gray;
+                if (inputContext != null || inputBuffer.Length == 0) Console.ForegroundColor = TextClient.GRAY;
                 Console.Write((inputContext != null ? EDITING_STATUS : inputBuffer.Length == 0 ? _StatusLine ?? (commandMode ? DEFAULT_COMMAND_STATUS : DEFAULT_STATUS) : inputBuffer.ToString()).PadRightHard(mainWidth - 2));
-                Console.ResetColor();
+                Console.ForegroundColor = TextClient.WHITE;
                 ResetCursor();
             }
         }
@@ -404,6 +407,7 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
+                Console.CursorVisible = false;
                 int pinnedFullHeight = ((AbstractView)mainView.PinnedView).GetFullHeight();
                 if (pinnedFullHeight + (_TimerVisible ? 1 : 0) != pinnedHeight) RedrawSideViews();
                 else
@@ -480,13 +484,12 @@ namespace ToSTextClient
 
         protected void ResetCursor()
         {
-            if (inputContext != null)
+            if (inputContext != null) inputContext.MoveCursor();
+            else
             {
-                inputContext.MoveCursor();
-                return;
+                Console.CursorTop = fullHeight - 1;
+                Console.CursorLeft = bufferIndex + 2;
             }
-            Console.CursorTop = fullHeight - 1;
-            Console.CursorLeft = bufferIndex + 2;
             Console.CursorVisible = true;
         }
 
@@ -726,6 +729,7 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
+                Console.CursorVisible = false;
                 mainView.Scroll(lines);
                 sideEnd -= lines = sideEnd - Math.Max(fullHeight - pinnedHeight - 1, Math.Min(sideHeight - 1, sideEnd - lines));
                 if (lines > 0)
@@ -734,9 +738,9 @@ namespace ToSTextClient
                     int line = sideEnd, lastHeight = 0;
                     foreach (AbstractView sideView in sideViews)
                     {
-                        if (lastHeight != 0 && line < fullHeight - pinnedHeight && line >= fullHeight - lines - pinnedHeight)
+                        if (lastHeight != 0 && line-- >= fullHeight - lines - pinnedHeight && line < fullHeight - pinnedHeight - 1)
                         {
-                            Console.CursorTop = --line;
+                            Console.CursorTop = line;
                             Console.CursorLeft = mainWidth + 1;
                             Console.Write("".PadRight(sideWidth, '-'));
                         }
@@ -749,9 +753,9 @@ namespace ToSTextClient
                     int line = sideEnd, lastHeight = 0;
                     foreach (AbstractView sideView in sideViews)
                     {
-                        if (lastHeight != 0 && line > 0 && line <= -lines)
+                        if (lastHeight != 0 && line-- > 0 && line < -lines)
                         {
-                            Console.CursorTop = --line;
+                            Console.CursorTop = line;
                             Console.CursorLeft = mainWidth + 1;
                             Console.Write("".PadRight(sideWidth, '-'));
                         }
@@ -873,7 +877,7 @@ namespace ToSTextClient
             }
             else if (lines < 0)
             {
-                int drawLower = Math.Max(--pos - lastHeight, drawOffset);
+                int drawLower = Math.Max(pos - lastHeight, drawOffset);
                 int drawUpper = Math.Min(pos, drawOffset - lines);
                 if (drawUpper - drawLower > 0)
                 {
@@ -910,7 +914,7 @@ namespace ToSTextClient
             append(this);
         }
 
-        public void AppendLine(FormattedString format, params object[] args) => AppendLine(format.Format(args));
+        public void AppendLine(FormattedString format, params object[] args) => AppendLine(FormattedString.Format(format, args));
 
         public void ReplaceLine(int index, FormattedString text)
         {
@@ -918,7 +922,7 @@ namespace ToSTextClient
             ui.RedrawView(this);
         }
 
-        public void ReplaceLine(int index, FormattedString format, params object[] args) => ReplaceLine(index, format?.Format(args));
+        public void ReplaceLine(int index, FormattedString format, params object[] args) => ReplaceLine(index, FormattedString.Format(format, args));
 
         public void Clear()
         {
@@ -934,13 +938,11 @@ namespace ToSTextClient
                 int lineIndex = 0;
                 for (; startLine < Lines.Count && lineIndex < height; startLine++, lineIndex++)
                 {
-                    Console.ForegroundColor = Lines[startLine]?.Foreground ?? ConsoleColor.Gray;
-                    Console.BackgroundColor = Lines[startLine]?.Background ?? ConsoleColor.Black;
-                    Console.Write((Lines[startLine]?.Value ?? "").PadRightHard(width));
+                    if (Lines[startLine] != null) Lines[startLine].Render(width);
+                    else Console.Write("".PadRight(width));
                     Console.CursorTop++;
                     Console.CursorLeft = cursorOffset;
                 }
-                Console.ResetColor();
                 return lineIndex;
             }
         }
@@ -951,9 +953,9 @@ namespace ToSTextClient
         public string Title { get; set; }
 
         protected Func<IList<T>> list;
-        protected Func<T, string> map;
+        protected Func<T, FormattedString> map;
 
-        public ListView(string title, Func<IList<T>> list, Func<T, string> map, Func<CommandContext, bool> isAllowed, int minimumWidth) : base(isAllowed, minimumWidth, 1)
+        public ListView(string title, Func<IList<T>> list, Func<T, FormattedString> map, Func<CommandContext, bool> isAllowed, int minimumWidth) : base(isAllowed, minimumWidth, 1)
         {
             Title = title;
             this.list = list;
@@ -981,7 +983,7 @@ namespace ToSTextClient
                 if (startLine >= list.Count) return lineIndex;
                 for (; startLine < list.Count && lineIndex < height; startLine++, lineIndex++)
                 {
-                    Console.Write(map(list[startLine]).PadRightHard(width));
+                    map(list[startLine]).Render(width);
                     Console.CursorTop++;
                     Console.CursorLeft = cursorOffset;
                 }
@@ -1334,12 +1336,12 @@ namespace ToSTextClient
                     Console.CursorTop++;
                     Console.CursorLeft = cursorOffset;
                 }
-                foreach (string line in _Topic.Value.cmd.Documentation)
+                foreach (FormattedString line in _Topic.Value.cmd.Documentation)
                 {
                     if (++currentLine > startLine)
                     {
                         if (lineIndex++ >= height) return lineIndex;
-                        Console.Write(line.PadRightHard(width));
+                        line.Render(width);
                         Console.CursorTop++;
                         Console.CursorLeft = cursorOffset;
                     }
@@ -1396,7 +1398,7 @@ namespace ToSTextClient
                 }
                 catch (SocketException)
                 {
-                    Status = ("Failed to connect to the server: check your internet connection", ConsoleColor.DarkRed);
+                    Status = ("Failed to connect to the server: check your internet connection", TextClient.RED);
                     Close();
                 }
                 catch (Exception e)
@@ -1487,9 +1489,9 @@ namespace ToSTextClient
                 switch (selectedHost)
                 {
                     case Host.Live:
-                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.ForegroundColor = TextClient.GREEN;
                         Console.Write(Host.Live);
-                        Console.ResetColor();
+                        Console.ForegroundColor = TextClient.WHITE;
                         Console.Write(" / ");
                         Console.Write(Host.PTR);
                         Console.Write(" / ");
@@ -1498,9 +1500,9 @@ namespace ToSTextClient
                     case Host.PTR:
                         Console.Write(Host.Live);
                         Console.Write(" / ");
-                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.ForegroundColor = TextClient.GREEN;
                         Console.Write(Host.PTR);
-                        Console.ResetColor();
+                        Console.ForegroundColor = TextClient.WHITE;
                         Console.Write(" / ");
                         Console.Write(Host.Local);
                         break;
@@ -1509,9 +1511,9 @@ namespace ToSTextClient
                         Console.Write(" / ");
                         Console.Write(Host.PTR);
                         Console.Write(" / ");
-                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.ForegroundColor = TextClient.GREEN;
                         Console.Write(Host.Local);
-                        Console.ResetColor();
+                        Console.ForegroundColor = TextClient.WHITE;
                         break;
                 }
                 Console.CursorTop++;
@@ -1536,10 +1538,8 @@ namespace ToSTextClient
             if (++currentLine > startLine)
             {
                 if (lineIndex++ >= height) return lineIndex;
-                Console.ForegroundColor = _Status?.Foreground ?? ConsoleColor.Gray;
-                Console.BackgroundColor = _Status?.Background ?? ConsoleColor.Black;
-                Console.Write((_Status?.Value ?? "").PadRightHard(width));
-                Console.ResetColor();
+                if (_Status != null) _Status.Render(width);
+                else Console.Write("".PadRight(width));
                 Console.CursorTop++;
                 Console.CursorLeft = cursorOffset;
             }
@@ -1600,12 +1600,12 @@ namespace ToSTextClient
 
         public NameView(ConsoleUI ui, int minimumWidth, int minimumHeight) : base(context => true, minimumWidth, minimumHeight) => this.ui = ui;
 
-        public override int GetFullHeight() => 1;
+        public override int GetFullHeight() => ui.Game.GameState.Self != null ? 1 : 0;
 
         protected override int DrawUnsafe(int width, int height, int startLine = 0)
         {
             if (startLine > 0 || height < 1) return 0;
-            Console.Write(ui.Game.GameState.ToName(ui.Game.GameState.Self, true).PadRightHard(width));
+            ui.Game.GameState.ToName(ui.Game.GameState.Self, true).Render(width);
             return 1;
         }
     }
