@@ -715,7 +715,13 @@ namespace ToSTextClient
         {
             try
             {
-                Parser.Parse(buffer, 0, socket.EndReceive(result));
+                int read = socket.EndReceive(result);
+                if (read == 0)
+                {
+                    Debug.WriteLine("Connection closed");
+                    return;
+                }
+                Parser.Parse(buffer, 0, read);
             }
             catch (SocketException ex)
             {
