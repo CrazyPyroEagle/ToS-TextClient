@@ -17,6 +17,7 @@ namespace ToSTextClient
         ITextView HomeView { get; }
         ITextView GameView { get; }
         IListView<GameMode> GameModeView { get; }
+        IInputView SettingsView { get; }
         IListView<PlayerState> PlayerListView { get; }
         IListView<Role> RoleListView { get; }
         IListView<PlayerState> GraveyardView { get; }

@@ -51,6 +51,8 @@ namespace ToSTextClient
         public IList<Pet> OwnedPets { get; set; } = new List<Pet>();
         public IList<LobbyIcon> OwnedLobbyIcons { get; set; } = new List<LobbyIcon>();
         public IList<DeathAnimation> OwnedDeathAnimations { get; set; } = new List<DeathAnimation>();
+        public bool ShareSkin { get => _ShareSkin; set { Parser.UpdateSettings(Setting.DISPLAY_SKINS, (_ShareSkin = value) ? (byte)1 : (byte)0); UI.RedrawView(UI.SettingsView); } }
+        public Language QueueLanguage { get => _QueueLanguage; set { Parser.UpdateSettings(Setting.SELECTED_QUEUE_LANGUAGE, (byte)(_QueueLanguage = value)); UI.RedrawView(UI.SettingsView); } }
         public GameState GameState
         {
             get => _GameState;
@@ -95,6 +97,8 @@ namespace ToSTextClient
         private uint _TownPoints;
         private uint _MeritPoints;
         private byte _PermissionLevel = 1;
+        private bool _ShareSkin;
+        private Language _QueueLanguage;
         private GameState _GameState;
         private int _Timer;
         private string _TimerText;
@@ -144,7 +148,6 @@ namespace ToSTextClient
             UI.RegisterCommand(new Command("Leave the queue", CommandContext.HOME.Set(), cmd => ClientMessageParsers.LeaveRankedQueue(Parser)), "leavequeue");
             UI.RegisterCommand(new Command("Accept the queue popup", CommandContext.HOME.Set(), cmd => Parser.AcceptRanked()), "accept");
             UI.RegisterCommand(new Command("Exit the game", context => true, cmd => UI.RunInput = false), "quit", "exit");
-            UI.RegisterCommand(new Command<Language>("Set the lobby language", CommandContext.HOME.Set(), ArgumentParsers.ForEnum<Language>(UI), (cmd, lang) => Parser.UpdateSettings(Setting.SELECTED_QUEUE_LANGUAGE, (byte)lang)), "lang", "language");
             UI.RegisterCommand(new Command("Leave the game", CommandExtensions.IsInLobbyOrGame, cmd => Parser.LeaveGame()), "leave");
             UI.RegisterCommand(new Command("Leave the post-game lobby", CommandContext.POST_GAME.Set(), cmd => Parser.LeavePostGameLobby()), "leavepost");
             UI.RegisterCommand(new Command("Vote to repick the host", CommandContext.LOBBY.Set(), cmd => Parser.VoteToRepickHost()), "repick");
@@ -343,6 +346,12 @@ namespace ToSTextClient
                 TownPoints = townPoints;
                 MeritPoints = meritPoints;
                 Username = username;
+            };
+            // Add missing cases here
+            MessageParser.SettingsInformation += (filterChat, muteMusic, muteEffects, shareSkin, classicSkinsOnly, displayPets, effectsVolume, musicVolume, language, unknown, tipBehaviour) =>
+            {
+                _ShareSkin = shareSkin;
+                _QueueLanguage = language;
             };
             // Add missing cases here
             MessageParser.ForcedLogout += () =>

@@ -55,6 +55,7 @@ namespace ToSTextClient
         public IAuthView AuthView { get; protected set; }
         public ITextView HomeView { get; protected set; }
         public IListView<GameMode> GameModeView { get; protected set; }
+        public IInputView SettingsView { get; protected set; }
         public ITextView GameView { get; protected set; }
         public IListView<PlayerState> PlayerListView { get; protected set; }
         public IListView<Role> RoleListView { get; protected set; }
@@ -62,11 +63,7 @@ namespace ToSTextClient
         public IListView<PlayerState> TeamView { get; protected set; }
         public IWillView LastWillView { get; protected set; }
         public IListView<Player> WinnerView { get; protected set; }
-        public string StatusLine
-        {
-            get => _StatusLine;
-            set { _StatusLine = value; RedrawCursor(); }
-        }
+        public string StatusLine { get => _StatusLine; set { _StatusLine = value; RedrawCursor(); } }
         public CommandContext CommandContext { get => _CommandContext; set { CommandContext old = _CommandContext; _CommandContext = value; UpdateCommandMode(); if (sideViews.Where(view => view.IsAllowed(old) != view.IsAllowed(value)).Count() > 0) RedrawSideViews(); else RedrawView(helpView); } }
         public bool RunInput { get => _RunInput; set => _RunInput = value; }
 
@@ -96,6 +93,7 @@ namespace ToSTextClient
             HomeView = new TextView(this, UpdateView, CommandContext.HOME.Set(), 60, 2, new UserInfoView(this, 20, 2));
             GameView = new TextView(this, UpdateView, CommandExtensions.IsInLobbyOrGame, 60, 20, new NameView(this, 23, 1));
             RegisterView(GameModeView = new ListView<GameMode>(" # Game Modes", () => Game.ActiveGameModes.Where(gm => Game.Resources.GetMetadata(gm).PermissionLevel <= Game.PermissionLevel).ToList(), gm => gm.ToString().ToDisplayName(), CommandContext.HOME.Set(), 25), "game modes", "modes");
+            RegisterView(SettingsView = new SettingsView(this), "Settings", "settings");
             RegisterView(PlayerListView = new ListView<PlayerState>(" # Players", () => Game.GameState.Players, p => p.Dead ? "" : Game.GameState.ToName(p.ID, true), CommandExtensions.IsInLobbyOrGame, 25), "player list", "players", "playerlist");
             RegisterView(RoleListView = new ListView<Role>(" # Role List", () => Game.GameState.Roles, r => Game.Resources.Of(r), CommandExtensions.IsInLobbyOrGame, 25), "role list", "roles", "rolelist");
             RegisterView(GraveyardView = new ListView<PlayerState>(" # Graveyard", () => Game.GameState.Graveyard, ps => Game.GameState.ToName(ps, true), CommandExtensions.IsInGame, 40), "graveyard", "graveyard");
@@ -131,6 +129,12 @@ namespace ToSTextClient
             RegisterCommand(openCommand, "open");
             RegisterCommand(closeCommand, "close");
             RegisterCommand(new Command("Redraw the whole screen", activeContext => true, cmd => RedrawAll()), "redraw");
+            RegisterCommand(new Command("Change your settings", SettingsView.IsAllowed, cmd =>
+            {
+                OpenSideView(SettingsView);
+                inputContext = SettingsView;
+                RedrawCursor();
+            }), "settings");
             RegisterCommand(new Command<Option<Player>>("Edit your LW or view {0}'s", CommandExtensions.IsInGame, ArgumentParsers.Optional(ArgumentParsers.Player(this)), (cmd, opTarget) =>
             {
                 opTarget.Match(target =>
@@ -1341,6 +1345,124 @@ namespace ToSTextClient
                         Console.CursorLeft = cursorOffset;
                     }
                 }
+            }
+            return lineIndex;
+        }
+    }
+
+    class SettingsView : AbstractView, IInputView
+    {
+        private readonly ConsoleUI ui;
+        private int selected = 0;
+
+        public SettingsView(ConsoleUI ui) : base(CommandContext.HOME.Set(), 15, 5) => this.ui = ui;
+
+        public void Insert(char c) { }
+
+        public void Backspace() { }
+
+        public void Delete() { }
+
+        public void Enter() { }
+
+        public void Home() { }
+
+        public void End() { }
+
+        public void Close() { }
+
+        public void UpArrow()
+        {
+            if (selected > 0) selected--;
+        }
+
+        public void DownArrow()
+        {
+            if (selected < 1) selected++;
+        }
+
+        public void LeftArrow()
+        {
+            switch (selected)
+            {
+                case 0:
+                    ui.Game.ShareSkin = !ui.Game.ShareSkin;
+                    break;
+                case 1:
+                    if (ui.Game.QueueLanguage > Language.UNSELECTED) ui.Game.QueueLanguage--;
+                    break;
+            }
+        }
+
+        public void RightArrow()
+        {
+            switch (selected)
+            {
+                case 0:
+                    ui.Game.ShareSkin = !ui.Game.ShareSkin;
+                    break;
+                case 1:
+                    if (ui.Game.QueueLanguage < Language.SPANISH) ui.Game.QueueLanguage++;
+                    break;
+            }
+        }
+
+        public void MoveCursor()
+        {
+            Console.CursorTop = lastDrawnTop - lastStartLine + 2 * selected + 2;
+            int length = 0;
+            switch (selected)
+            {
+                case 0:
+                    length = ui.Game.ShareSkin ? 3 : 2;
+                    break;
+                case 1:
+                    length = ui.Game.QueueLanguage.ToString().Length;
+                    break;
+            }
+            Console.CursorLeft = lastDrawnLeft + length;
+        }
+
+        public override int GetFullHeight() => 5;
+
+        protected override int DrawUnsafe(int width, int height, int startLine = 0)
+        {
+            int cursorOffset = Console.CursorLeft;
+            int lineIndex = 0, currentLine = 0;
+            if (++currentLine > startLine)
+            {
+                if (lineIndex++ >= height) return lineIndex;
+                Console.Write(" # Settings".PadRightHard(width));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
+            if (++currentLine > startLine)
+            {
+                if (lineIndex++ >= height) return lineIndex;
+                Console.Write("  Display Skins ".PadRightHard(width));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
+            if (++currentLine > startLine)
+            {
+                if (lineIndex++ >= height) return lineIndex;
+                Console.Write((ui.Game.ShareSkin ? "Yes" : "No").PadRightHard(width));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
+            if (++currentLine > startLine)
+            {
+                if (lineIndex++ >= height) return lineIndex;
+                Console.Write("  Queue Language".PadRightHard(width));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
+            }
+            if (++currentLine > startLine)
+            {
+                if (lineIndex++ >= height) return lineIndex;
+                Console.Write(ui.Game.QueueLanguage.ToString().ToDisplayName().PadRightHard(width));
+                Console.CursorTop++;
+                Console.CursorLeft = cursorOffset;
             }
             return lineIndex;
         }
