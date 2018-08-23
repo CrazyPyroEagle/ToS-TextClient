@@ -95,9 +95,9 @@ namespace ToSTextClient
             AuthView = new AuthView(this, game => Game = game);
             HomeView = new TextView(this, UpdateView, CommandContext.HOME.Set(), 60, 2, new UserInfoView(this, 20, 2));
             GameView = new TextView(this, UpdateView, CommandExtensions.IsInLobbyOrGame, 60, 20, new NameView(this, 23, 1));
-            RegisterView(GameModeView = new ListView<GameMode>(" # Game Modes", () => Game.ActiveGameModes.Where(gm => Game.OwnsCoven || !gm.RequiresCoven()).ToList(), gm => gm.ToString().ToDisplayName(), CommandContext.HOME.Set(), 25), "game modes", "modes");
+            RegisterView(GameModeView = new ListView<GameMode>(" # Game Modes", () => Game.ActiveGameModes.Where(gm => Game.Resources.GetMetadata(gm).PermissionLevel <= Game.PermissionLevel).ToList(), gm => gm.ToString().ToDisplayName(), CommandContext.HOME.Set(), 25), "game modes", "modes");
             RegisterView(PlayerListView = new ListView<PlayerState>(" # Players", () => Game.GameState.Players, p => p.Dead ? "" : Game.GameState.ToName(p.ID, true), CommandExtensions.IsInLobbyOrGame, 25), "player list", "players", "playerlist");
-            RegisterView(RoleListView = new ListView<Role>(" # Role List", () => Game.GameState.Roles, r => Game.Localization.Of(r), CommandExtensions.IsInLobbyOrGame, 25), "role list", "roles", "rolelist");
+            RegisterView(RoleListView = new ListView<Role>(" # Role List", () => Game.GameState.Roles, r => Game.Resources.Of(r), CommandExtensions.IsInLobbyOrGame, 25), "role list", "roles", "rolelist");
             RegisterView(GraveyardView = new ListView<PlayerState>(" # Graveyard", () => Game.GameState.Graveyard, ps => Game.GameState.ToName(ps, true), CommandExtensions.IsInGame, 40), "graveyard", "graveyard");
             RegisterView(TeamView = new ListView<PlayerState>(" # Team", () => Game.GameState.Team, ps => !ps.Dead || ps.Role == Role.DISGUISER ? Game.GameState.ToName(ps, true) : "", CommandExtensions.IsInGame, 40), "team");
             RegisterView(LastWillView = new WillView(this), "LW/DN", "lw", "dn", "lastwill", "deathnote");

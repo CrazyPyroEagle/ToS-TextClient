@@ -13,7 +13,7 @@ namespace ToSTextClient
         public Role Role
         {
             get => _Role;
-            set { Game.UI.CommandContext = CommandContext.ROLE_SELECTION; Game.UI.GameView.AppendLine("Your role is {0}", Game.Localization.Of(_Role = value)); }
+            set { Game.UI.CommandContext = CommandContext.ROLE_SELECTION; Game.UI.GameView.AppendLine("Your role is {0}", Game.Resources.Of(_Role = value)); }
         }
         public PlayerState Self { get => _Self; set { _Self = value; Game.UI.RedrawView(Game.UI.GameView.PinnedView); } }
         public Player Target { get => _Target; set => Game.UI.GameView.AppendLine("Your target is {0}", ToName(_Target = value)); }
@@ -44,7 +44,7 @@ namespace ToSTextClient
                 DayState = DayState.NONE;
                 Game.UI.CommandContext = CommandContext.NIGHT;
                 Game.UI.GameView.AppendLine(("Night {0}", TextClient.BLACK, TextClient.WHITE), _Night = value);
-                Game.Timer = GameMode == GameMode.RAPID_MODE ? 15 : 30;
+                Game.Timer = Game.Resources.GetMetadata(GameMode).RapidMode ? 15 : 30;
                 Game.TimerText = "Night";
             }
         }
@@ -181,7 +181,7 @@ namespace ToSTextClient
         public FormattedString ToName(PlayerState playerState, bool inList = false)
         {
             if (playerState.Role == null) return ToName(playerState.ID, inList);
-            return FormattedString.Format("{0} ({1})", ToName(playerState.ID, inList), playerState.Youngest ? "Youngest" : Game.Localization.Of((Role)playerState.Role));
+            return FormattedString.Format("{0} ({1})", ToName(playerState.ID, inList), playerState.Youngest ? "Youngest" : Game.Resources.Of((Role)playerState.Role));
         }
 
         public bool TryParsePlayer(string[] args, ref int index, out Player player, bool allowNone = true)

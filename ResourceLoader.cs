@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -8,27 +10,38 @@ using ToSParser;
 
 namespace ToSTextClient
 {
-    class Localization
+    class ResourceLoader
     {
-        protected const string LOCALIZATION_ROOT = "file://C:/Program Files (x86)/steam/steamapps/common/Town of Salem/XMLData/Localization/en-US";
-        protected const string FALLBACK_ROOT = "http://blankmediagames.com/TownOfSalem/XMLData/Localization/en-US";
+        protected const string STEAM_ROOT = "file://C:/Program Files (x86)/steam/steamapps/common/Town of Salem/XMLData";
+        protected const string REMOTE_ROOT = "http://blankmediagames.com/TownOfSalem/XMLData";
 
         protected ITextUI ui;
         protected XDocument game;
         protected XDocument mod;
 
-        public Localization(ITextUI ui)
+        protected Dictionary<GameMode, GameModeMetadata> gameModes;
+        protected Dictionary<string, IEnumerable<Role>> roleLists;
+        protected Dictionary<string, IEnumerable<(Role role, byte? limit)>> catalogs;
+
+        public ResourceLoader(ITextUI ui)
         {
             this.ui = ui;
-            game = LoadResource("Game.xml");
-            mod = LoadResource("Mod.xml");
+            game = LoadResource("Localization/en-US/Game.xml");
+            mod = LoadResource("Localization/en-US/Mod.xml");
+
+            XDocument gameModes = LoadResource("GameModes.xml", false);
+            this.gameModes = gameModes.Element("GameModes").Element("Modes").Elements("Mode").ToDictionary(entry => (GameMode)(byte.Parse(entry.Element("id").Value) - 1), entry => new GameModeMetadata(this, entry));
+            roleLists = gameModes.Element("GameModes").Elements("RoleList").ToDictionary(entry => entry.Attribute("id").Value, entry => entry.Elements("Role").Select(e => (Role)byte.Parse(e.Attribute("id").Value)));
+            catalogs = gameModes.Element("GameModes").Elements("Catalog").ToDictionary(entry => entry.Attribute("id").Value, entry => entry.Elements("Entry").SelectMany(e => e.Elements("Role")).Select(e => ((Role)byte.Parse(e.Attribute("id").Value), byte.TryParse(e.Attribute("limit")?.Value, out byte result) ? (byte?)result : null)));
         }
 
-        public FormattedString Of(LocalizationTable value) => Get(game, ((byte)value).ToString()) ?? value.ToString().ToDisplayName();
+        public IGameModeMetadata GetMetadata(GameMode mode) => gameModes[mode];
 
-        public FormattedString OfSpyResult(LocalizationTable value) => Get(game, string.Format("SpyResult_{0}", (byte)value)) ?? string.Format("Spy Result: {0}", Of(value));
+        public FormattedString Of(LocalizationTable value) => GetLocalization(game, ((byte)value).ToString()) ?? value.ToString().ToDisplayName();
 
-        public FormattedString Of(ModeratorMessage value) => Get(mod, ((byte)(value + 1)).ToString()) ?? value.ToString().ToDisplayName();
+        public FormattedString OfSpyResult(LocalizationTable value) => GetLocalization(game, string.Format("SpyResult_{0}", (byte)value)) ?? string.Format("Spy Result: {0}", Of(value));
+
+        public FormattedString Of(ModeratorMessage value) => GetLocalization(mod, ((byte)(value + 1)).ToString()) ?? value.ToString().ToDisplayName();
 
         public FormattedString Of(Role role)        // TODO: Use exact colours from official client
         {
@@ -164,7 +177,7 @@ namespace ToSTextClient
             }
         }
 
-        protected FormattedString Get(XDocument doc, string id)
+        protected FormattedString GetLocalization(XDocument doc, string id)
         {
             XElement element = doc.Element("Entries").Elements("Entry").Where(entry => entry.Element("id").Value == id).FirstOrDefault();
             return element == null ? null : EncodeColor(element.Element("Text").Value, element.Element("Color").Value);
@@ -172,33 +185,76 @@ namespace ToSTextClient
 
         protected FormattedString EncodeColor(string message, string rawColor) => (message, ColorTranslator.FromHtml(rawColor));
 
-        protected XDocument LoadResource(string path)
+        protected XDocument LoadResource(string path, bool allowLocal = true)
         {
             try
             {
-                return XDocument.Load(path);
+                if (allowLocal) return XDocument.Load(Path.GetFileName(path));
             }
             catch (Exception ex) when (ex is IOException || ex is SecurityException)
             {
-                try
-                {
-                    return XDocument.Load(Combine(LOCALIZATION_ROOT, path));
-                }
-                catch (Exception ex2) when (ex2 is IOException || ex2 is SecurityException)
-                {
-                    try
-                    {
-                        return XDocument.Load(Combine(FALLBACK_ROOT, path));
-                    }
-                    catch (Exception ex3) when (ex3 is IOException || ex3 is SecurityException)
-                    {
-                        ui.StatusLine = "Failed to load localization files: check your internet connection";
-                        return null;
-                    }
-                }
+                Debug.WriteLine("Failed to load local file: {0}", (object)path);
+                Debug.WriteLine(ex.Message);
             }
+            try
+            {
+                return XDocument.Load(Combine(STEAM_ROOT, path));
+            }
+            catch (Exception ex) when (ex is IOException || ex is SecurityException)
+            {
+                Debug.WriteLine("Failed to load Steam file: {0}", (object)path);
+                Debug.WriteLine(ex.Message);
+            }
+            try
+            {
+                return XDocument.Load(Combine(REMOTE_ROOT, path));
+            }
+            catch (Exception ex) when (ex is IOException || ex is SecurityException)
+            {
+                Debug.WriteLine("Failed to load remote file: {0}", (object)path);
+                Debug.WriteLine(ex.Message);
+            }
+            ui.StatusLine = "Failed to load localization files: check your internet connection";
+            return null;
         }
 
         protected string Combine(string dirUri, string path) => string.Format("{0}/{1}", dirUri, path);
+
+        protected class GameModeMetadata : IGameModeMetadata
+        {
+            public GameMode ID => (GameMode)(byte.Parse(mode.Element("id").Value) - 1);
+            public byte PermissionLevel => byte.Parse(mode.Element("PermissionLevel").Value);
+            public string Name => mode.Element("Name")?.Value;
+            public string Label => mode.Element("Label")?.Value;
+            public string Summary => mode.Element("Summary")?.Value;
+            public string LobbyType => mode.Element("LobbyType")?.Value;
+            public byte MinimumPlayers => byte.Parse(mode.Element("MinimumPlayers").Value);
+            public bool RapidMode => mode.Element("RapidMode")?.Value == "1";
+            public IEnumerable<Role> RoleList => parent.roleLists[mode.Element("RoleList").Attribute("id").Value];
+            public IEnumerable<(Role role, byte? limit)> Catalog => parent.catalogs[mode.Element("Catalog").Attribute("id").Value];
+
+            protected ResourceLoader parent;
+            protected XElement mode;
+
+            public GameModeMetadata(ResourceLoader parent, XElement mode)
+            {
+                this.parent = parent;
+                this.mode = mode;
+            }
+        }
+    }
+
+    interface IGameModeMetadata
+    {
+        GameMode ID { get; }
+        byte PermissionLevel { get; }
+        string Name { get; }
+        string Label { get; }
+        string Summary { get; }
+        string LobbyType { get; }
+        byte MinimumPlayers { get; }
+        bool RapidMode { get; }
+        IEnumerable<Role> RoleList { get; }
+        IEnumerable<(Role role, byte? limit)> Catalog { get; }
     }
 }

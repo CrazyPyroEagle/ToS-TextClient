@@ -42,7 +42,7 @@ namespace ToSTextClient
         public string Username { get; protected set; }
         public uint TownPoints { get => _TownPoints; set { _TownPoints = value; UI.RedrawView(UI.HomeView.PinnedView); } }
         public uint MeritPoints { get => _MeritPoints; set { _MeritPoints = value; UI.RedrawView(UI.HomeView.PinnedView); } }
-        public bool OwnsCoven { get; protected set; }
+        public byte PermissionLevel { get => _PermissionLevel; protected set { _PermissionLevel = value; UI.RedrawView(UI.GameModeView); } }        // TODO: Figure out the best way of getting this value
         public IList<GameMode> ActiveGameModes { get; set; } = new List<GameMode>();
         public IList<Achievement> EarnedAchievements { get; set; } = new List<Achievement>();
         public IList<Character> OwnedCharacters { get; set; } = new List<Character>();
@@ -77,7 +77,7 @@ namespace ToSTextClient
         public ITextUI UI { get; }
         public MessageParser Parser { get; protected set; }
         public ServerMessageParser MessageParser { get; protected set; }
-        public Localization Localization { get; protected set; }
+        public ResourceLoader Resources { get; protected set; }
         public int Timer
         {
             get => _Timer;
@@ -94,6 +94,7 @@ namespace ToSTextClient
 
         private uint _TownPoints;
         private uint _MeritPoints;
+        private byte _PermissionLevel = 1;
         private GameState _GameState;
         private int _Timer;
         private string _TimerText;
@@ -123,7 +124,7 @@ namespace ToSTextClient
         public TextClient(ConsoleUI ui, Socket socket, string authUsername, SecureString authPassword)
         {
             UI = ui;
-            Localization = new Localization(UI);
+            Resources = new ResourceLoader(UI);
             UI.RegisterCommand(new Command("Disconnect from the server", CommandExtensions.IsAuthenticated, cmd =>
             {
                 socket.Close();
@@ -147,15 +148,30 @@ namespace ToSTextClient
             UI.RegisterCommand(new Command("Leave the game", CommandExtensions.IsInLobbyOrGame, cmd => Parser.LeaveGame()), "leave");
             UI.RegisterCommand(new Command("Leave the post-game lobby", CommandContext.POST_GAME.Set(), cmd => Parser.LeavePostGameLobby()), "leavepost");
             UI.RegisterCommand(new Command("Vote to repick the host", CommandContext.LOBBY.Set(), cmd => Parser.VoteToRepickHost()), "repick");
-            UI.RegisterCommand(new Command<Role>("Add {0} to the role list", context => context == CommandContext.LOBBY && GameState.Host, ArgumentParsers.ForEnum<Role>(UI, map: Localization.Of), (cmd, role) =>
+            UI.RegisterCommand(new Command<Role>("Add {0} to the role list", context => context == CommandContext.LOBBY && Resources.GetMetadata(GameState.GameMode).LobbyType == "Custom" && GameState.Host, ArgumentParsers.ForEnum<Role>(UI, map: Resources.Of), (cmd, role) =>
             {
-                Parser.ClickedOnAddButton(role);
-                GameState.AddRole(role);
+                IEnumerable<(Role role, byte? limit)> meta = Resources.GetMetadata(GameState.GameMode).Catalog.Where(r => r.role == role);
+                if (!meta.Any())
+                {
+                    UI.StatusLine = string.Format("Cannot add {0} to this lobby", Resources.Of(role));
+                    return;
+                }
+                (_, byte? limit) = meta.First();
+                if (limit == null || limit > GameState.Roles.Count(r => r == role))
+                {
+                    Parser.ClickedOnAddButton(role);
+                    GameState.AddRole(role);
+                }
+                else UI.StatusLine = string.Format("Cannot add {0} to this lobby: limit of {1} has been reached", Resources.Of(role), meta.First().limit);
             }), "add");
-            UI.RegisterCommand(new Command<byte>("Remove {0} from the role list", context => context == CommandContext.LOBBY && GameState.Host, ArgumentParsers.Position(UI), (cmd, position) =>
+            UI.RegisterCommand(new Command<byte>("Remove {0} from the role list", context => context == CommandContext.LOBBY && Resources.GetMetadata(GameState.GameMode).LobbyType == "Custom" && GameState.Host, ArgumentParsers.Position(UI), (cmd, position) =>
             {
-                Parser.ClickedOnRemoveButton(position);
-                GameState.RemoveRole(position);
+                if (position < GameState.Roles.Length)
+                {
+                    Parser.ClickedOnRemoveButton(position);
+                    GameState.RemoveRole(position);
+                }
+                else UI.StatusLine = string.Format("Cannot remove role at index {0} from this lobby: no role found at that index", position + 1);
             }), "remove");
             UI.RegisterCommand(new Command("Force the game to start", context => context == CommandContext.LOBBY && GameState.Host, cmd => Parser.ClickedOnStartButton()), "start");
             UI.RegisterCommand(new Command<string>("Set your name to {0}", CommandContext.PICK_NAMES.Set(), ArgumentParsers.Text(UI, "Name"), (cmd, name) => Parser.ChooseName(name)), "n", "name");
@@ -197,7 +213,7 @@ namespace ToSTextClient
             UI.RegisterCommand(new Command<LocalizationTable>("Make your target see {0}", CommandContext.NIGHT.Set().And(ac => GameState.Role == Role.HYPNOTIST), ArgumentParsers.ForEnum<LocalizationTable>(UI), (cmd, message) =>
             {
                 Parser.SetHypnotistChoice(message);
-                UI.GameView.AppendLine("Your target will see: {0}", Localization.Of(message));
+                UI.GameView.AppendLine("Your target will see: {0}", Resources.Of(message));
             }), "hm", "hypnotizemessage");
             UI.RegisterCommand(new Command("Reveal yourself as the Mayor", CommandContext.DAY.Set().And(ac => GameState.Role == Role.MAYOR), cmd => Parser.SetDayChoice(GameState.Self.ID)), "reveal");
             UI.RegisterCommand(new Command<Player>("Vote {0} up to the stand", CommandContext.VOTING.Set(), ArgumentParsers.Player(UI), (cmd, target) => Parser.SetVote(target)), "v", "vote");
@@ -238,7 +254,7 @@ namespace ToSTextClient
                 .Register(new Command("Reset your tutorial progress", CommandExtensions.IsAuthenticated, cmd => Parser.SendSystemMessage(SystemCommand.RESET_TUTORIAL_PROGRESS, "\x01")), "resettutorialprogress")
                 .Register(new Command("Reload the promotion data", CommandExtensions.IsAuthenticated, cmd => Parser.SendSystemMessage(SystemCommand.RELOAD_PROMOTION_XML, "\x01")), "reloadpromotionxml")
                 .Register(new Command<string, Promotion>("Grant {1} to {0}", CommandExtensions.IsAuthenticated, ArgumentParsers.Username(UI), ArgumentParsers.ForEnum<Promotion>(UI), (cmd, username, promotion) => Parser.SendSystemMessage(SystemCommand.GRANT_PROMOTION, username, ((byte)promotion).ToString())), "grantpromotion")
-                .Register(new Command<Role>("Set your role to {0}", CommandContext.LOBBY.Set().Or(CommandContext.PICK_NAMES.Set()), ArgumentParsers.ForEnum<Role>(UI, map: Localization.Of), (cmd, role) => Parser.SendSystemMessage(SystemCommand.SET_ROLE, ((byte)role).ToString())), "setrole")
+                .Register(new Command<Role>("Set your role to {0}", CommandContext.LOBBY.Set().Or(CommandContext.PICK_NAMES.Set()), ArgumentParsers.ForEnum<Role>(UI, map: Resources.Of), (cmd, role) => Parser.SendSystemMessage(SystemCommand.SET_ROLE, ((byte)role).ToString())), "setrole")
                 .Register(new Command<AccountItem>("Grant yourself {0}", CommandExtensions.IsAuthenticated, ArgumentParsers.ForEnum<AccountItem>(UI), (cmd, accountItem) => Parser.SendSystemMessage(SystemCommand.GRANT_ACCOUNT_ITEM, ((byte)accountItem).ToString())), "grantaccountitem")
                 .Register(new Command<string>("Force {0} to change username", CommandExtensions.IsAuthenticated, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.FORCE_NAME_CHANGE, username)), "forcenamechange")
                 .Register(new Command<string>("Grant {0} 5200 Merit Points", CommandExtensions.IsAuthenticated, ArgumentParsers.Username(UI), (cmd, username) => Parser.SendSystemMessage(SystemCommand.GRANT_MERIT, username)), "grantmerit")
@@ -320,7 +336,7 @@ namespace ToSTextClient
             MessageParser.DoNotSpam += () => UI.GameView.AppendLine(("Please do not spam the chat", GREEN, null));
             MessageParser.HowManyPlayersAndGames += (players, games) => UI.GameView.AppendLine(("There are currently {0} players online and {1} games being played", GREEN, null), players, games);
             MessageParser.SystemMessage += message => UI.GameView.AppendLine(("(System) {0}", YELLOW, null), message);
-            MessageParser.StringTableMessage += tableMessage => UI.GameView.AppendLine(Localization.Of(tableMessage));
+            MessageParser.StringTableMessage += tableMessage => UI.GameView.AppendLine(Resources.Of(tableMessage));
             // Add missing cases here
             MessageParser.UserInformation += (username, townPoints, meritPoints) =>
             {
@@ -351,6 +367,8 @@ namespace ToSTextClient
             MessageParser.PurchasedLobbyIcons += lobbyIcons => OwnedLobbyIcons = lobbyIcons.ToList();
             MessageParser.PurchasedDeathAnimations += deathAnimations => OwnedDeathAnimations = deathAnimations.ToList();
             // Add missing cases here
+            MessageParser.SteamPopup += () => Debug.WriteLine("Received S#68 (SteamPopup)");
+            // Add missing cases here
             MessageParser.StartRankedQueue += (requeue, seconds) =>
             {
                 if (requeue) UI.StatusLine = "Requeued due to a lack of players";
@@ -373,7 +391,7 @@ namespace ToSTextClient
             // Add missing cases here
             MessageParser.RankedTimeoutDuration += seconds => UI.StatusLine = string.Format("Timed out for {0} seconds", seconds);
             // Add missing cases here
-            MessageParser.ModeratorMessage += (modMessage, args) => UI.GameView.AppendLine(Localization.Of(modMessage));
+            MessageParser.ModeratorMessage += (modMessage, args) => UI.GameView.AppendLine(Resources.Of(modMessage));
             // Add missing cases here
             MessageParser.UserJoiningLobbyTooQuickly += () => UI.StatusLine = "Wait 15 seconds before rejoining";
             // Add missing cases here
@@ -407,7 +425,7 @@ namespace ToSTextClient
             MessageParser.StartDiscussion += () =>
             {
                 UI.GameView.AppendLine("Discussion may now begin");
-                Timer = GameState.GameMode == GameMode.RAPID_MODE ? 15 : 45;
+                Timer = Resources.GetMetadata(GameState.GameMode).RapidMode ? 15 : 45;
                 TimerText = "Discussion";
             };
             MessageParser.StartVoting += _ =>
@@ -451,7 +469,7 @@ namespace ToSTextClient
             MessageParser.UserChosenName += (tableMessage, player, name) =>
             {
                 GameState.Players[(int)player].Name = name;
-                UI.GameView.AppendLine(GameState.ToName(player) + " " + Localization.Of(tableMessage));
+                UI.GameView.AppendLine(GameState.ToName(player) + " " + Resources.Of(tableMessage));
             };
             MessageParser.OtherMafia += mafia =>
             {
@@ -582,7 +600,7 @@ namespace ToSTextClient
             MessageParser.SpyNightAbilityMessage += (isCoven, player) => UI.GameView.AppendLine(("A member of the {0} visited {1}", GREEN, null), isCoven ? "Coven" : "Mafia", GameState.ToName(player));
             MessageParser.OneDayBeforeStalemate += () => UI.GameView.AppendLine(("If noone dies by tomorrow, the game will end in a draw", GREEN, null));
             // Add missing cases here
-            MessageParser.FullMoonNight += () => UI.GameView.AppendLine(Localization.Of(LocalizationTable.FULL_MOON));
+            MessageParser.FullMoonNight += () => UI.GameView.AppendLine(Resources.Of(LocalizationTable.FULL_MOON));
             MessageParser.Identify += message => UI.GameView.AppendLine((message, YELLOW, null));
             MessageParser.EndGameInfo += (timeout, gameMode, winner, won, eloChange, mpGain, players) =>
             {
@@ -677,7 +695,7 @@ namespace ToSTextClient
             };
             MessageParser.AccountFlags += flags =>
             {
-                OwnsCoven = flags.HasFlag(AccountFlags.OWNS_COVEN);
+                PermissionLevel = flags.HasFlag(AccountFlags.OWNS_COVEN) ? (byte)1 : (byte)0;
                 UI.RedrawView(UI.GameModeView);
             };
             MessageParser.ZombieRotted += player => UI.GameView.AppendLine(("You may no longer use {0}'s night ability", GREEN, null), player);
@@ -687,7 +705,7 @@ namespace ToSTextClient
             // Add missing cases here
             MessageParser.JailorDeathNote += (player, _, reason) => GameState.Players[(int)player].DeathNote = reason.ToString().ToDisplayName();
             MessageParser.Disconnected += reason => UI.AuthView.Status = FormattedString.Format(("Disconnected: {0}", RED), reason.ToString().ToDisplayName());
-            MessageParser.SpyNightInfo += tableMessages => tableMessages.ForEach(tableMessage => UI.GameView.AppendLine(Localization.OfSpyResult(tableMessage)));
+            MessageParser.SpyNightInfo += tableMessages => tableMessages.ForEach(tableMessage => UI.GameView.AppendLine(Resources.OfSpyResult(tableMessage)));
             // Add missing cases here
         }
 
@@ -786,7 +804,7 @@ namespace ToSTextClient
     {
         public static void SafeReplace<T>(this List<T> list, int index, T value)
         {
-            while (list.Count < index) list.Add(default(T));
+            while (list.Count < index) list.Add(default);
             if (list.Count == index) list.Add(value);
             else list[index] = value;
         }
@@ -853,26 +871,6 @@ namespace ToSTextClient
                 case GameMode.RANKED:
                 case GameMode.COVEN_RANKED:
                     return true;
-            }
-        }
-
-        public static bool RequiresCoven(this GameMode mode)
-        {
-            switch (mode)
-            {
-                default:
-                    return false;
-                case GameMode.COVEN_CUSTOM:
-                case GameMode.COVEN_CLASSIC:
-                case GameMode.COVEN_RANKED_PRACTICE:
-                case GameMode.COVEN_RANKED:
-                case GameMode.COVEN_ALL_ANY:
-                case GameMode.COVEN_VIP:
-                case GameMode.DEV_ROOM:
-                case GameMode.COVEN_LOVERS:
-                case GameMode.COVEN_RIVALS:
-                case GameMode.COVEN_MAFIA:
-                        return true;
             }
         }
 

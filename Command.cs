@@ -190,7 +190,7 @@ namespace ToSTextClient
                     return true;
                 }
             }
-            result = default(Type);
+            result = default;
             onFailed?.Invoke();
             return false;
         }
@@ -202,7 +202,7 @@ namespace ToSTextClient
         {
             if (value.Length == 0)
             {
-                copy = default(string);
+                copy = default;
                 return false;
             }
             copy = value;
@@ -233,7 +233,7 @@ namespace ToSTextClient
         public static ArgumentParser<TOut>.TryParser ModifyResult<TIn, TOut>(ArgumentParser<TIn>.TryParser parser, Func<TIn, TOut> func) => (string value, out TOut result) =>
         {
             bool valid;
-            result = (valid = parser(value, out TIn rawResult)) ? func(rawResult) : default(TOut);
+            result = (valid = parser(value, out TIn rawResult)) ? func(rawResult) : default;
             return valid;
         };
 
