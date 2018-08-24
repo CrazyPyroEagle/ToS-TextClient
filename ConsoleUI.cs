@@ -300,7 +300,7 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
-                Console.CursorVisible = false;
+                bool state = StartRendering();
                 if (mainWidth < mainView.MinimumWidth)
                 {
                     RedrawAll();
@@ -308,7 +308,7 @@ namespace ToSTextClient
                 }
                 int mainHeight = mainView.FullHeight;
                 mainView.Render(mainWidth, fullHeight - 1, 0, 0, Math.Max(0, mainHeight - fullHeight + 1));
-                ResetCursor();
+                ResetCursor(state);
             }
         }
 
@@ -316,7 +316,7 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
-                Console.CursorVisible = false;
+                bool state = StartRendering();
                 if (mainView.SideViews.Count > 0)
                 {
                     int maxMinWidth = 0;
@@ -365,7 +365,7 @@ namespace ToSTextClient
                     RedrawAll();
                     return;
                 }
-                ResetCursor();
+                ResetCursor(state);
             }
         }
 
@@ -373,7 +373,7 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
-                Console.CursorVisible = false;
+                bool state = StartRendering();
                 Console.CursorTop = fullHeight - 1;
                 Console.CursorLeft = 0;
                 Console.ForegroundColor = TextClient.WHITE;
@@ -381,7 +381,7 @@ namespace ToSTextClient
                 if (inputContext != null || inputBuffer.Length == 0) Console.ForegroundColor = TextClient.GRAY;
                 Console.Write((inputContext != null ? EDITING_STATUS : inputBuffer.Length == 0 ? _StatusLine ?? (commandMode ? DEFAULT_COMMAND_STATUS : DEFAULT_STATUS) : inputBuffer.ToString()).PadRightHard(mainWidth - 2));
                 Console.ForegroundColor = TextClient.WHITE;
-                ResetCursor();
+                ResetCursor(state);
             }
         }
 
@@ -389,7 +389,7 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
-                Console.CursorVisible = false;
+                bool state = StartRendering();
                 int pinnedFullHeight = mainView.View.PinnedView != null && sideRenderers.TryGetValue(mainView.View.PinnedView, out SideViewRenderer renderer) ? renderer.FullHeight : 0;
                 if (pinnedFullHeight + (_TimerVisible ? 1 : 0) != pinnedHeight) RedrawSideViews();
                 else
@@ -401,8 +401,8 @@ namespace ToSTextClient
                         Console.CursorLeft = mainWidth + 1;
                         Console.Write((Game.TimerText != null ? string.Format("{0}: {1}", Game.TimerText, Game.Timer) : "").PadRightHard(sideWidth));
                     }
-                    ResetCursor();
                 }
+                ResetCursor(state);
             }
         }
 
@@ -417,7 +417,7 @@ namespace ToSTextClient
             {
                 if (view.View == mainView.View.PinnedView) RedrawPinned();
                 if (!mainView.SideViews.Contains(view)) return;
-                Console.CursorVisible = false;
+                bool state = StartRendering();
                 switch (view.Redraw())
                 {
                     case RedrawResult.WIDTH_CHANGED:
@@ -427,7 +427,7 @@ namespace ToSTextClient
                         RedrawSideViews();
                         return;
                 }
-                ResetCursor();
+                ResetCursor(state);
             }
         }
 
@@ -458,7 +458,14 @@ namespace ToSTextClient
             SetMainView(Views.Exception);
         }
 
-        protected void ResetCursor()
+        protected bool StartRendering()
+        {
+            bool end = Console.CursorVisible;
+            Console.CursorVisible = false;
+            return end;
+        }
+
+        protected void ResetCursor(bool end)
         {
             if (inputContext != null)
             {
@@ -474,7 +481,7 @@ namespace ToSTextClient
                 Console.CursorTop = fullHeight - 1;
                 Console.CursorLeft = bufferIndex + 2;
             }
-            Console.CursorVisible = true;
+            Console.CursorVisible = end;
         }
 
         protected void UpdateCommandMode(CommandContext value)
@@ -510,8 +517,7 @@ namespace ToSTextClient
                 if (fullWidth != Console.WindowWidth || fullHeight != Console.WindowHeight) RedrawAll();
                 lock (drawLock)
                 {
-                    ResetCursor();
-                    Console.CursorVisible = false;
+                    ResetCursor(false);
                     switch (key.Key)
                     {
                         default:
@@ -653,6 +659,7 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
+                bool state = StartRendering();
                 Console.CursorVisible = false;
                 mainView.Scroll(lines);
                 sideEnd -= lines = sideEnd - Math.Max(fullHeight - pinnedHeight - 1, Math.Min(sideHeight - 1, sideEnd - lines));
@@ -686,7 +693,7 @@ namespace ToSTextClient
                         line -= lastHeight = sideView.Scroll(lines);
                     }
                 }
-                ResetCursor();
+                ResetCursor(state);
             }
         }
 
@@ -743,7 +750,7 @@ namespace ToSTextClient
 
             protected void CursorChange()
             {
-                if (ui.inputContext == View) ui.ResetCursor();
+                if (ui.inputContext == View) ui.ResetCursor(true);
             }
 
             protected int SafeCursorTop(int y)
@@ -825,7 +832,6 @@ namespace ToSTextClient
                     if (this != ui.mainView) return;
                     if (line >= ui.fullHeight - 1) Scroll(1);
                     else ui.RedrawMainView();
-                    ui.ResetCursor();
                 }
             }
 
@@ -834,9 +840,9 @@ namespace ToSTextClient
                 lock (ui.drawLock)
                 {
                     if (this != ui.mainView) return;
-                    Console.CursorVisible = false;
+                    bool state = ui.StartRendering();
                     base.RenderStateless(lastWidth, lastHeight, 0, 0, -line);
-                    ui.ResetCursor();
+                    ui.ResetCursor(state);
                 }
             }
         }
