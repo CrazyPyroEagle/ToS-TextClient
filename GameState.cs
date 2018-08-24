@@ -5,7 +5,7 @@ using ToSParser;
 
 namespace ToSTextClient
 {
-    class GameState
+    public class GameState
     {
         public TextClient Game { get; protected set; }
         public GameMode GameMode { get; protected set; }
@@ -13,12 +13,12 @@ namespace ToSTextClient
         public Role Role
         {
             get => _Role;
-            set { Game.UI.CommandContext = CommandContext.ROLE_SELECTION; Game.UI.GameView.AppendLine("Your role is {0}", Game.Resources.Of(_Role = value)); }
+            set { Game.UI.CommandContext = CommandContext.ROLE_SELECTION; Game.UI.Views.Game.AppendLine("Your role is {0}", Game.Resources.Of(_Role = value)); }
         }
-        public PlayerState Self { get => _Self; set { _Self = value; Game.UI.RedrawView(Game.UI.GameView.PinnedView); } }
-        public Player Target { get => _Target; set => Game.UI.GameView.AppendLine("Your target is {0}", ToName(_Target = value)); }
+        public PlayerState Self { get => _Self; set { _Self = value; Game.UI.Views.Game.PinnedView.Redraw(); } }
+        public Player Target { get => _Target; set => Game.UI.Views.Game.AppendLine("Your target is {0}", ToName(_Target = value)); }
         public PlayerState[] Players { get; protected set; } = new PlayerState[15];
-        public Role[] Roles { get => _Roles; set { _Roles = value; Game.UI.RedrawView(Game.UI.RoleListView); } }
+        public Role[] Roles { get => _Roles; set { _Roles = value; Game.UI.Views.Roles.Redraw(); } }
         public List<PlayerState> Team { get; set; } = new List<PlayerState>();
         public List<PlayerState> Graveyard { get; set; } = new List<PlayerState>();
         public int Day
@@ -28,7 +28,7 @@ namespace ToSTextClient
             {
                 NightState = NightState.NONE;
                 Game.UI.CommandContext = CommandContext.DAY;
-                Game.UI.GameView.AppendLine(("Day {0}", TextClient.BLACK, TextClient.WHITE), _Day = value);
+                Game.UI.Views.Game.AppendLine(("Day {0}", TextClient.BLACK, TextClient.WHITE), _Day = value);
                 if (value == 1)
                 {
                     Game.Timer = 15;
@@ -43,7 +43,7 @@ namespace ToSTextClient
             {
                 DayState = DayState.NONE;
                 Game.UI.CommandContext = CommandContext.NIGHT;
-                Game.UI.GameView.AppendLine(("Night {0}", TextClient.BLACK, TextClient.WHITE), _Night = value);
+                Game.UI.Views.Game.AppendLine(("Night {0}", TextClient.BLACK, TextClient.WHITE), _Night = value);
                 Game.Timer = Game.Resources.GetMetadata(GameMode).RapidMode ? 15 : 30;
                 Game.TimerText = "Night";
             }
@@ -52,12 +52,12 @@ namespace ToSTextClient
         public bool Host
         {
             get => _Host;
-            set { if (_Host != value) { Game.UI.GameView.AppendLine(((_Host = value) ? "You are now host" : "You are no longer host", TextClient.GREEN, null)); } }
+            set { if (_Host != value) { Game.UI.Views.Game.AppendLine(((_Host = value) ? "You are now host" : "You are no longer host", TextClient.GREEN, null)); } }
         }
         public Player? HostID
         {
             get => _HostID;
-            set { _HostID = value; Game.UI.RedrawView(Game.UI.PlayerListView); }
+            set { _HostID = value; Game.UI.Views.Players.Redraw(); }
         }
         public string LastWill
         {
@@ -76,8 +76,8 @@ namespace ToSTextClient
         }
         public DayState DayState { get; set; }
         public NightState NightState { get; set; }
-        public Faction WinningFaction { get => _WinningFaction; set => Game.UI.GameView.AppendLine((string.Format("Winning faction: {0}", (_WinningFaction = value).ToString().ToDisplayName()), TextClient.GREEN, null)); }
-        public Player[] Winners { get => _Winners; set { _Winners = value; Game.UI.CommandContext = CommandContext.GAME_END; Game.UI.OpenSideView(Game.UI.WinnerView); if (value.Contains(Self.ID)) Game.UI.GameView.AppendLine(("You have won", TextClient.GREEN, null)); } }
+        public Faction WinningFaction { get => _WinningFaction; set => Game.UI.Views.Game.AppendLine((string.Format("Winning faction: {0}", (_WinningFaction = value).ToString().ToDisplayName()), TextClient.GREEN, null)); }
+        public Player[] Winners { get => _Winners; set { _Winners = value; Game.UI.CommandContext = CommandContext.GAME_END; Game.UI.OpenSideView(Game.UI.Views.Winners); if (value.Contains(Self.ID)) Game.UI.Views.Game.AppendLine(("You have won", TextClient.GREEN, null)); } }
         
         protected Role _Role;
         protected PlayerState _Self;
@@ -109,8 +109,8 @@ namespace ToSTextClient
             PopulatePlayers();
             HostID = null;
             Game.UI.CommandContext = CommandContext.PICK_NAMES;
-            Game.UI.RedrawSideViews();
-            Game.UI.GameView.AppendLine(("Please choose a name (or wait to get a random name)", TextClient.GREEN, null));
+            Game.UI.Views.Players.Redraw();
+            Game.UI.Views.Game.AppendLine(("Please choose a name (or wait to get a random name)", TextClient.GREEN, null));
             Game.Timer = 25;
             Game.TimerText = "Pick Names";
         }
@@ -119,15 +119,15 @@ namespace ToSTextClient
         {
             if (host) HostID = player;
             PlayerState playerState = Players[(int)player];
+            if (username == Game.Username) Self = playerState;
             playerState.Name = username;
             playerState.SelectedLobbyIcon = lobbyIcon;
-            if (display) Game.UI.GameView.AppendLine(("{0} has joined the game", TextClient.GREEN, null), ToName(player));
-            if (username == Game.Username) Self = playerState;
+            if (display) Game.UI.Views.Game.AppendLine(("{0} has joined the game", TextClient.GREEN, null), ToName(player));
         }
 
         public void RemovePlayer(Player player, bool update, bool display)
         {
-            if (display) Game.UI.GameView.AppendLine(("{0} has left the game", TextClient.GREEN, null), ToName(player));
+            if (display) Game.UI.Views.Game.AppendLine(("{0} has left the game", TextClient.GREEN, null), ToName(player));
             if (update)
             {
                 for (int index = (int)player + 1; index < Players.Length; index++)
@@ -136,7 +136,7 @@ namespace ToSTextClient
                     Players[index - 1] = Players[index];
                 }
                 Players[14] = new PlayerState(this, Player.PLAYER_15);
-                Game.UI.RedrawView(Game.UI.PlayerListView);
+                Game.UI.Views.Players.Redraw();
             }
             else Players[(int)player].Left = true;
         }
@@ -239,18 +239,18 @@ namespace ToSTextClient
         }
     }
 
-    class PlayerState
+    public class PlayerState
     {
         public Player ID { get; set; }
         public string Name
         {
             get { return _Name; }
-            set { _Name = value; game.Game.UI.RedrawView(game.Game.UI.PlayerListView, game.Game.UI.GameView.PinnedView); }
+            set { _Name = value; game.Game.UI.Views.Players.Redraw(); if (this == game.Self) game.Game.UI.Views.Game.PinnedView.Redraw(); }
         }
         public Role? Role
         {
             get { return _Role; }
-            set { _Role = value; game.Game.UI.RedrawView(game.Game.UI.TeamView); }
+            set { _Role = value; game.Game.UI.Views.Team.Redraw(); }
         }
         public Character SelectedCharacter { get; set; }
         public House SelectedHouse { get; set; }
@@ -260,21 +260,21 @@ namespace ToSTextClient
         public bool Dead
         {
             get { return _Dead; }
-            set { _Dead = value; game.Game.UI.RedrawView(game.Game.UI.TeamView, game.Game.UI.PlayerListView); }
+            set { _Dead = value; game.Game.UI.Views.Team.Redraw(); game.Game.UI.Views.Players.Redraw(); }
         }
         public bool Left
         {
             get { return _Left; }
-            set { _Left = value; game.Game.UI.RedrawView(game.Game.UI.PlayerListView, game.Game.UI.TeamView, game.Game.UI.GraveyardView); }
+            set { _Left = value; game.Game.UI.Views.Players.Redraw(); game.Game.UI.Views.Team.Redraw(); game.Game.UI.Views.Graveyard.Redraw(); }
         }
         public string LastWill
         {
             get { return _LastWill; }
             set
             {
-                game.Game.UI.LastWillView.Title = string.Format(" # (LW) {0}", game.ToName(ID));
-                game.Game.UI.LastWillView.Value = _LastWill = value;
-                game.Game.UI.OpenSideView(game.Game.UI.LastWillView);
+                game.Game.UI.Views.LastWill.Title = string.Format(" # (LW) {0}", game.ToName(ID));
+                game.Game.UI.Views.LastWill.Value = _LastWill = value;
+                game.Game.UI.OpenSideView(game.Game.UI.Views.LastWill);
                 game.Game.Timer = 6;
                 game.Game.TimerText = "Last Will";
             }
@@ -284,12 +284,12 @@ namespace ToSTextClient
             get { return _DeathNote; }
             set
             {
-                game.Game.UI.LastWillView.Title = string.Format(" # (DN) {0}", game.ToName(ID));
-                game.Game.UI.LastWillView.Value = _DeathNote = value;
-                game.Game.UI.OpenSideView(game.Game.UI.LastWillView);
+                game.Game.UI.Views.LastWill.Title = string.Format(" # (DN) {0}", game.ToName(ID));
+                game.Game.UI.Views.LastWill.Value = _DeathNote = value;
+                game.Game.UI.OpenSideView(game.Game.UI.Views.LastWill);
             }
         }
-        public bool Youngest { get => _Youngest && !_Dead; set { if (_Youngest = value) game.Game.UI.GameView.AppendLine("{0} is now the youngest vampire", game.ToName(ID)); game.Game.UI.RedrawView(game.Game.UI.TeamView, game.Game.UI.GraveyardView); } }
+        public bool Youngest { get => _Youngest && !_Dead; set { if (_Youngest = value) game.Game.UI.Views.Game.AppendLine("{0} is now the youngest vampire", game.ToName(ID)); game.Game.UI.Views.Team.Redraw(); game.Game.UI.Views.Graveyard.Redraw(); } }
 
         private GameState game;
         private string _Name;
@@ -308,14 +308,14 @@ namespace ToSTextClient
     }
 
     [Flags]
-    enum DayState
+    public enum DayState
     {
         NONE,
         BLACKMAILED
     }
 
     [Flags]
-    enum NightState
+    public enum NightState
     {
         NONE,
         JAILED,

@@ -2,53 +2,54 @@
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Net.Sockets;
+using System.Security;
 using System.Text;
-using ToSParser;
 
 using Console = Colorful.Console;
 
 namespace ToSTextClient
 {
-    interface ITextUI
+    public interface ITextUI
     {
-        GameState GameState { get; }
-        IExceptionView ExceptionView { get; }
-        IAuthView AuthView { get; }
-        ITextView HomeView { get; }
-        ITextView GameView { get; }
-        IListView<GameMode> GameModeView { get; }
-        IInputView SettingsView { get; }
-        IListView<PlayerState> PlayerListView { get; }
-        IListView<Role> RoleListView { get; }
-        IListView<PlayerState> GraveyardView { get; }
-        IListView<PlayerState> TeamView { get; }
-        IWillView LastWillView { get; }
-        IListView<Player> WinnerView { get; }
+        TextClient Game { get; }
+        ViewRegistry Views { get; }
+        IReadOnlyDictionary<string, Command> Commands { get; }
         string StatusLine { get; set; }
         CommandContext CommandContext { get; set; }
         bool RunInput { get; set; }
         bool TimerVisible { get; set; }
 
+        void RegisterCommand(Command command, params string[] names);
+        void RegisterMainView(IView view, params string[] names);
+        void RegisterSideView(IView view, params string[] names);
         void SetMainView(IView view);
         void OpenSideView(IView view);
         void CloseSideView(IView view);
-        void RedrawTimer();
-        void RedrawView(params IView[] views);
-        void RedrawMainView();
-        void RedrawSideViews();
-        void RegisterCommand(Command command, params string[] names);
         void SetInputContext(IInputView view);
+        void RedrawTimer();
         void AudioAlert();
         void Run();
     }
 
-    interface IView : IContextual
+    public interface IView : IContextual
     {
+        int MinimumWidth { get; }
+        int MinimumHeight { get; }
         IView PinnedView { get; }
+
+        event Action<string, Exception> OnException;
+        event Action OnTextChange;
+
+        IEnumerable<FormattedString> Lines(int width);
+        void Redraw();
     }
 
-    interface ITextView : IView
+    public interface ITextView : IView
     {
+        event Action<int, FormattedString> OnAppend;
+        event Action<int, FormattedString> OnReplace;
+
         void AppendLine(FormattedString text);
         void AppendLine(FormattedString format, params object[] args);
         void ReplaceLine(int index, FormattedString text);
@@ -56,41 +57,50 @@ namespace ToSTextClient
         void Clear();
     }
 
-    interface IListView<T> : IView { }
-
-    interface IWillView : IView
+    public interface IWillView : IView
     {
         string Title { get; set; }
         string Value { get; set; }
     }
 
-    interface IExceptionView : IView
+    public interface IEditableWillView : IView
+    {
+        string Title { get; set; }
+
+        event Action<string> OnSave;
+    }
+
+    public interface IHelpView : IView
+    {
+        (IDocumented cmd, string[] names)? Topic { get; set; }
+
+        event Action OnShowHelp;
+    }
+
+    public interface IExceptionView : IView
     {
         Exception Exception { get; set; }
     }
 
-    interface IInputView : IView
+    public interface IInputView : IView
     {
-        void Insert(char c);
-        void Enter();
-        void Backspace();
-        void Delete();
-        void LeftArrow();
-        void RightArrow();
-        void Home();
-        void End();
-        void UpArrow();
-        void DownArrow();
-        void MoveCursor();
+        (int x, int y) Cursor { get; }
+
+        event Action OnCursorChange;
+
+        void KeyPress(ConsoleKeyInfo key);
+
         void Close();
     }
 
-    interface IAuthView : IInputView
+    public interface IAuthView : IInputView
     {
-        FormattedString Status { get; set; }
+        FormattedString Status { set; }
+
+        event Action<Socket, string, SecureString> OnAuthenticate;
     }
 
-    class FormattedString
+    public class FormattedString
     {
         public string RawValue => values.Select(v => v.raw).Aggregate(new StringBuilder(), (sb, raw) => sb.Append(raw)).ToString();
         protected (string raw, Color? fg, Color? bg)[] values;
@@ -182,6 +192,9 @@ namespace ToSTextClient
             yield return (string.Format(sb.ToString(), args), value.fg, value.bg);
         }
 
+        public static FormattedString Concat(IEnumerable<FormattedString> values) => new FormattedString(values.SelectMany(sr => sr.values).ToArray());
+        public static FormattedString Concat(params FormattedString[] values) => Concat((IEnumerable<FormattedString>)values);
+
         public static FormattedString From(params (string raw, Color? fg, Color? bg)[] values) => new FormattedString(values);
 
         public static implicit operator FormattedString(string value) => new FormattedString((value, null, null));
@@ -205,7 +218,7 @@ namespace ToSTextClient
         public static FormattedString operator +(FormattedString a, FormattedString b) => new FormattedString(a.values.Concat(b.values).ToArray());
     }
 
-    enum RedrawResult
+    public enum RedrawResult
     {
         SUCCESS,
         WIDTH_CHANGED,

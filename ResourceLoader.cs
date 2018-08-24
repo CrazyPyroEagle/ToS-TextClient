@@ -10,7 +10,7 @@ using ToSParser;
 
 namespace ToSTextClient
 {
-    class ResourceLoader
+    public class ResourceLoader
     {
         protected const string STEAM_ROOT = "file://C:/Program Files (x86)/steam/steamapps/common/Town of Salem/XMLData";
         protected const string REMOTE_ROOT = "http://blankmediagames.com/TownOfSalem/XMLData";
@@ -244,7 +244,7 @@ namespace ToSTextClient
         }
     }
 
-    interface IGameModeMetadata
+    public interface IGameModeMetadata
     {
         GameMode ID { get; }
         byte PermissionLevel { get; }
