@@ -603,7 +603,7 @@ namespace ToSTextClient
             yield return "  Share Skin";
             yield return game.ShareSkin ? "Yes" : "No";
             yield return "  Queue Language";
-            yield return game.QueueLanguage.ToString();
+            yield return game.QueueLanguage.ToString().ToDisplayName();
         }
 
         private void UpArrow()

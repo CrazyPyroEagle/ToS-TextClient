@@ -473,6 +473,8 @@ namespace ToSTextClient
                 if (mainRenderers.TryGetValue(inputContext, out MainViewRenderer mainRenderer)) (x, y) = mainRenderer.ToAbsolute(inputContext.Cursor);
                 else if (sideRenderers.TryGetValue(inputContext, out SideViewRenderer sideRenderer)) (x, y) = sideRenderer.ToAbsolute(inputContext.Cursor);
                 else throw new InvalidOperationException("input context is not a main view or a side view");
+                if (y < 0) ScrollSideViews(y);
+                else if (y >= sideEnd) ScrollSideViews(y - sideEnd + 1);
                 Console.CursorTop = y;
                 Console.CursorLeft = x;
             }
@@ -662,38 +664,43 @@ namespace ToSTextClient
                 bool state = StartRendering();
                 Console.CursorVisible = false;
                 mainView.Scroll(lines);
-                sideEnd -= lines = sideEnd - Math.Max(fullHeight - pinnedHeight - 1, Math.Min(sideHeight - 1, sideEnd - lines));
-                if (lines > 0)
-                {
-                    Console.MoveBufferArea(mainWidth + 1, lines, sideWidth, fullHeight - lines - pinnedHeight - 1, mainWidth + 1, 0);
-                    int line = sideEnd, lastHeight = 0;
-                    foreach (SideViewRenderer sideView in mainView.SideViews)
-                    {
-                        if (lastHeight != 0 && line-- >= fullHeight - lines - pinnedHeight && line < fullHeight - pinnedHeight - 1)
-                        {
-                            Console.CursorTop = line;
-                            Console.CursorLeft = mainWidth + 1;
-                            Console.Write("".PadRight(sideWidth, '-'));
-                        }
-                        line -= lastHeight = sideView.Scroll(lines);
-                    }
-                }
-                else if (lines < 0)
-                {
-                    Console.MoveBufferArea(mainWidth + 1, 0, sideWidth, fullHeight + lines - pinnedHeight - 1, mainWidth + 1, -lines);
-                    int line = sideEnd, lastHeight = 0;
-                    foreach (SideViewRenderer sideView in mainView.SideViews)
-                    {
-                        if (lastHeight != 0 && line-- > 0 && line < -lines)
-                        {
-                            Console.CursorTop = line;
-                            Console.CursorLeft = mainWidth + 1;
-                            Console.Write("".PadRight(sideWidth, '-'));
-                        }
-                        line -= lastHeight = sideView.Scroll(lines);
-                    }
-                }
+                ScrollSideViews(lines);
                 ResetCursor(state);
+            }
+        }
+
+        protected void ScrollSideViews(int lines)
+        {
+            sideEnd -= lines = sideEnd - Math.Max(fullHeight - pinnedHeight - 1, Math.Min(sideHeight - 1, sideEnd - lines));
+            if (lines > 0)
+            {
+                Console.MoveBufferArea(mainWidth + 1, lines, sideWidth, fullHeight - lines - pinnedHeight - 1, mainWidth + 1, 0);
+                int line = sideEnd, lastHeight = 0;
+                foreach (SideViewRenderer sideView in mainView.SideViews)
+                {
+                    if (lastHeight != 0 && line-- >= fullHeight - lines - pinnedHeight && line < fullHeight - pinnedHeight - 1)
+                    {
+                        Console.CursorTop = line;
+                        Console.CursorLeft = mainWidth + 1;
+                        Console.Write("".PadRight(sideWidth, '-'));
+                    }
+                    line -= lastHeight = sideView.Scroll(lines);
+                }
+            }
+            else if (lines < 0)
+            {
+                Console.MoveBufferArea(mainWidth + 1, 0, sideWidth, fullHeight + lines - pinnedHeight - 1, mainWidth + 1, -lines);
+                int line = sideEnd, lastHeight = 0;
+                foreach (SideViewRenderer sideView in mainView.SideViews)
+                {
+                    if (lastHeight != 0 && line-- > 0 && line < -lines)
+                    {
+                        Console.CursorTop = line;
+                        Console.CursorLeft = mainWidth + 1;
+                        Console.Write("".PadRight(sideWidth, '-'));
+                    }
+                    line -= lastHeight = sideView.Scroll(lines);
+                }
             }
         }
 
@@ -722,7 +729,7 @@ namespace ToSTextClient
 
             public int Render(int width, int height, int cursorTop, int cursorLeft, int startLine = 0) => RenderStateless(lastWidth = width, lastHeight = height, lastCursorTop = cursorTop, lastCursorLeft = cursorLeft, lastStartLine = startLine);
 
-            public (int x, int y) ToAbsolute((int x, int y) rel) => (lastCursorTop + rel.x, lastCursorLeft + rel.y);
+            public (int x, int y) ToAbsolute((int x, int y) rel) => (lastCursorLeft + rel.x, lastCursorTop - lastStartLine + rel.y);
 
             public virtual RedrawResult Redraw()
             {
