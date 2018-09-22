@@ -394,7 +394,7 @@ namespace ToSTextClient
                 if (pinnedFullHeight + (_TimerVisible ? 1 : 0) != pinnedHeight) RedrawSideViews();
                 else
                 {
-                    sideRenderers[mainView.View.PinnedView]?.Render(sideWidth, pinnedFullHeight, fullHeight - pinnedHeight, mainWidth + 1);
+                    if (mainView.View.PinnedView != null && sideRenderers.TryGetValue(mainView.View.PinnedView, out renderer)) renderer.Render(sideWidth, pinnedFullHeight, fullHeight - pinnedHeight, mainWidth + 1);
                     if (_TimerVisible)
                     {
                         Console.CursorTop = fullHeight - 1;

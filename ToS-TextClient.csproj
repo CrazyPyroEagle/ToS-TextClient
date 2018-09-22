@@ -14,8 +14,8 @@
     <OutputType>Exe</OutputType>
     <StartupObject>ToSTextClient.TextClient</StartupObject>
     <AssemblyVersion>1.6.0.0</AssemblyVersion>
-    <FileVersion>1.6.11.1</FileVersion>
-    <Version>1.6.0</Version>
+    <FileVersion>1.6.12.2</FileVersion>
+    <Version>1.6.2</Version>
     <NeutralLanguage>en-US</NeutralLanguage>
     <PackageReleaseNotes>Build 9706</PackageReleaseNotes>
   </PropertyGroup>
@@ -38,8 +38,5 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ToS-Parser\ToS-Parser.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Properties\" />
   </ItemGroup>
 </Project>

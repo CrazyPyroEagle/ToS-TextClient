@@ -29,12 +29,12 @@ namespace ToSTextClient
 
         public ViewRegistry(ITextUI ui)
         {
-            Func<TextClient> getGame = () => ui.Game;
+            TextClient GetGame() => ui.Game;
             ui.RegisterMainView(Exception = new ExceptionView(), "exception");
             ui.RegisterMainView(Auth = new AuthView(), "auth", "authentication", "login");
-            ui.RegisterMainView(Home = new TextView(CommandContext.HOME.Set(), 60, 2, new UserInfoView(getGame)), "home");
+            ui.RegisterMainView(Home = new TextView(CommandContext.HOME.Set(), 60, 2, new UserInfoView(GetGame)), "home");
             ui.RegisterSideView(GameModes = new ListView(" # Game Modes", () => ui.Game.ActiveGameModes.Select(gm => ui.Game.Resources.GetMetadata(gm)).Where(gm => gm.PermissionLevel <= ui.Game.PermissionLevel).Select(gm => (FormattedString)gm.Name), CommandContext.HOME.Set(), 25), "modes", "game modes", "gamemodes");
-            ui.RegisterSideView(Settings = new SettingsView(getGame), "settings", "options");
+            ui.RegisterSideView(Settings = new SettingsView(GetGame), "settings", "options");
             ui.RegisterMainView(Game = new TextView(CommandExtensions.IsInLobbyOrGame, 60, 20, new NameView(() => ui.Game.GameState)), "game");
             ui.RegisterSideView(Players = new ListView(" # Players", () => ui.Game.GameState.Players.Select(ps => (FormattedString)(ps.Dead ? "" : ui.Game.GameState.ToName(ps.ID, true))), CommandExtensions.IsInLobbyOrGame, 25), "players", "playerlist", "player list");
             ui.RegisterSideView(Roles = new ListView(" # Roles", () => ui.Game.GameState.Roles.Select(r => ui.Game.Resources.Of(r)), CommandExtensions.IsInLobbyOrGame, 25), "roles", "rolelist", "role list");
