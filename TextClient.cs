@@ -53,6 +53,10 @@ namespace ToSTextClient
         public IList<DeathAnimation> OwnedDeathAnimations { get; set; } = new List<DeathAnimation>();
         public bool ShareSkin { get => _ShareSkin; set { Parser.UpdateSettings(Setting.DISPLAY_SKINS, (_ShareSkin = value) ? (byte)1 : (byte)0); UI.Views.Settings.Redraw(); } }
         public Language QueueLanguage { get => _QueueLanguage; set { Parser.UpdateSettings(Setting.SELECTED_QUEUE_LANGUAGE, (byte)(_QueueLanguage = value)); UI.Views.Settings.Redraw(); } }
+        public FriendList Friends { get => _Friends; set { _Friends = value; UI.Views.Friends.Redraw(); } }
+        public IDictionary<string, uint> PendingFriendRequests { get => _PendingFriendRequests; set { _PendingFriendRequests = value; UI.Views.Notifications.Redraw(); } }
+        public IDictionary<string, uint> PendingPartyInvitations { get => _PendingPartyInvitations; set { _PendingPartyInvitations = value; UI.Views.Notifications.Redraw(); } }
+        public PartyState Party { get => _PartyState; set { _PartyState = value;  UI.OpenSideView(UI.Views.Party); UI.RedrawCursor(); } }
         public GameState GameState
         {
             get => _GameState;
@@ -65,6 +69,7 @@ namespace ToSTextClient
                     UI.CommandContext = CommandContext.LOBBY;
                     UI.SetMainView(UI.Views.Game);
                     UI.Views.Game.AppendLine(("Joined a lobby for {0}", GREEN, null), value.GameMode.ToString().ToDisplayName());
+                    Party = null;
                 }
                 else
                 {
@@ -89,6 +94,10 @@ namespace ToSTextClient
         private byte _PermissionLevel = 1;
         private bool _ShareSkin;
         private Language _QueueLanguage;
+        private FriendList _Friends;
+        private IDictionary<string, uint> _PendingFriendRequests = new Dictionary<string, uint>();
+        private IDictionary<string, uint> _PendingPartyInvitations = new Dictionary<string, uint>();
+        private PartyState _PartyState;
         private GameState _GameState;
 
         static void Main(string[] args)
@@ -116,6 +125,7 @@ namespace ToSTextClient
         {
             UI = ui;
             Resources = new ResourceLoader(UI);
+            Friends = new FriendList(UI);
             UI.RegisterCommand(new Command("Disconnect from the server", CommandExtensions.IsAuthenticated, cmd =>
             {
                 socket.Close();
@@ -127,11 +137,63 @@ namespace ToSTextClient
             {
                 if (ActiveGameModes.Contains(gameMode))
                 {
-                    if (gameMode.HasRankedQueue()) Parser.JoinRankedQueue(gameMode);
-                    else Parser.JoinLobby(gameMode);
+                    if (Party != null)
+                    {
+                        if (!gameMode.HasRankedQueue()) Parser.PartyStart(gameMode);
+                        else UI.StatusLine = string.Format("Cannot join {0} when in a party", gameMode.ToString().ToDisplayName());
+                    }
+                    else
+                    {
+                        if (gameMode.HasRankedQueue()) Parser.JoinRankedQueue(gameMode);
+                        else Parser.JoinLobby(gameMode);
+                    }
                 }
                 else UI.StatusLine = string.Format("Cannot join game mode: {0}", gameMode.ToString().ToDisplayName());
             }), "join");
+            UI.RegisterCommand(new CommandGroup("Friend-related actions", UI, "Subcommand", "Subcommands")
+                .Register(new Command<string>("Send {0} a friend request", CommandContext.HOME.Set(), ArgumentParsers.Username(UI), (cmd, username) => Parser.RequestFriend(username)), "add")
+                .Register(new Command<string>("Unfriend {0}", CommandContext.HOME.Set(), ArgumentParsers.Username(UI), (cmd, username) =>
+                {
+                    if (Friends.TryGetValue(username, out FriendState state)) Parser.RemoveFriend(username, state.UserID);
+                    else UI.StatusLine = string.Format("{0} is not in your friend list", username);
+                }), "remove")
+                .Register(new Command<string, string>("Send {1} to {0}", CommandContext.HOME.Set(), ArgumentParsers.Username(UI), ArgumentParsers.Text(UI, "Message"), (cmd, username, message) => Parser.SendFriendMessage(username, message)), "m", "message")
+                .Register(new Command<string>("Decline {0}'s friend request", CommandContext.HOME.Set(), ArgumentParsers.Username(UI), (cmd, username) =>
+                {
+                    if (PendingFriendRequests.TryGetValue(username, out uint userID))
+                    {
+                        Parser.DeclineFriendRequest(userID);
+                        PendingFriendRequests.Remove(username);
+                    }
+                    else UI.StatusLine = string.Format("No pending friend request from {0}", username);
+                }), "decline", "refuse")
+                .Register(new Command<string>("Accept a friend request", CommandContext.HOME.Set(), ArgumentParsers.Username(UI), (cmd, username) =>
+                {
+                    if (PendingFriendRequests.TryGetValue(username, out uint userID)) Parser.AcceptFriend(username, userID);
+                    else UI.StatusLine = string.Format("No pending friend request from {0}", username);
+                }), "accept"), "f", "friend");
+            UI.RegisterCommand(new CommandGroup("Party-related actions", UI, "Subcommand", "Subcommands")
+                .Register(new Command<Option<Brand>>("Create a party for {0}", CommandContext.HOME.Set().And(c => Party == null), ArgumentParsers.Optional(ArgumentParsers.ForEnum<Brand>(UI)), (cmd, brand) => Parser.CreateParty(brand.ValueOr(Brand.CLASSIC))), "c", "create")
+                .Register(new Command("Leave this party", CommandContext.HOME.Set().And(c => Party != null), cmd => Parser.RequestLeaveParty()), "l", "leave")
+                .Register(new Command<Brand>("Set this party's brand to {0}", CommandContext.HOME.Set().And(c => (Party?.Members?[Username]?.PermissionLevel ?? PartyPermissionLevel.None) >= PartyPermissionLevel.Host), ArgumentParsers.ForEnum<Brand>(UI), (cmd, brand) => Parser.SetPartyConfig(brand, Party.SelectedMode)), "b", "brand")
+                .Register(new Command<string>("Invite {0} to your party", CommandContext.HOME.Set().And(c => (Party?.Members?[Username]?.PermissionLevel ?? PartyPermissionLevel.None) >= PartyPermissionLevel.CanInvite), ArgumentParsers.Username(UI), (cmd, username) => Parser.InviteToParty(username)), "i", "invite")
+                .Register(new Command<string>("Allow {0} to invite", CommandContext.HOME.Set().And(c => (Party?.Members?[Username]?.PermissionLevel ?? PartyPermissionLevel.None) >= PartyPermissionLevel.Host), ArgumentParsers.Username(UI), (cmd, username) => Parser.GivePartyInvitePower(username)), "gi", "giveinvite", "give invite")
+                .Register(new Command<string>("Pass party host on to {0}", CommandContext.HOME.Set().And(c => (Party?.Members?[Username]?.PermissionLevel ?? PartyPermissionLevel.None) >= PartyPermissionLevel.Host), ArgumentParsers.Username(UI), (cmd, username) => Parser.SetPartyHost(username)), "sh", "sethost", "set host")
+                .Register(new Command<string>("Kick {0}", CommandContext.HOME.Set().And(c => (Party?.Members?[Username]?.PermissionLevel ?? PartyPermissionLevel.None) >= PartyPermissionLevel.Host), ArgumentParsers.Username(UI), (cmd, username) => Parser.KickFromParty(username)), "k", "kick")
+                .Register(new Command<string>("Decline {0}'s invitation", CommandContext.HOME.Set(), ArgumentParsers.Username(UI), (cmd, username) =>
+                {
+                    if (PendingPartyInvitations.TryGetValue(username, out uint userID)) Parser.RespondPartyInvite(PartyInviteResponse.REFUSED, userID);
+                    else UI.StatusLine = string.Format("No pending party invitation from {0}", username);
+                }), "d", "decline", "refuse")
+                .Register(new Command<string>("Accept {0}'s invitation", CommandContext.HOME.Set().And(c => Party == null), ArgumentParsers.Username(UI), (cmd, username) =>
+                {
+                    if (PendingPartyInvitations.TryGetValue(username, out uint userID))
+                    {
+                        Parser.RespondPartyInvite(PartyInviteResponse.ACCEPTING, userID);
+                        Parser.RespondPartyInvite(PartyInviteResponse.ACCEPTED, userID);
+                    }
+                    else UI.StatusLine = string.Format("No pending party invitation from {0}", username);
+                }), "a", "accept"), "p", "party");
             UI.RegisterCommand(new Command("Leave the queue", CommandContext.HOME.Set(), cmd => ClientMessageParsers.LeaveRankedQueue(Parser)), "leavequeue");
             UI.RegisterCommand(new Command("Accept the queue popup", CommandContext.HOME.Set(), cmd => Parser.AcceptRanked()), "accept");
             UI.RegisterCommand(new Command("Exit the game", context => true, cmd => UI.RunInput = false), "quit", "exit");
@@ -293,7 +355,6 @@ namespace ToSTextClient
                     UI.Views.Auth.Status = null;
                     UI.SetMainView(UI.Views.Home);
                     UI.CommandContext = CommandContext.HOME;
-                    UI.Views.Home.ReplaceLine(0, ("Authenticated. Loading user information...", GREEN));
                 }
                 else UI.Views.Auth.Status = ("Authentication failed: registration required", RED);
             };
@@ -326,20 +387,62 @@ namespace ToSTextClient
             MessageParser.HowManyPlayersAndGames += (players, games) => UI.Views.Game.AppendLine(("There are currently {0} players online and {1} games being played", GREEN, null), players, games);
             MessageParser.SystemMessage += message => UI.Views.Game.AppendLine(("(System) {0}", YELLOW, null), message);
             MessageParser.StringTableMessage += tableMessage => UI.Views.Game.AppendLine(Resources.Of(tableMessage));
+            MessageParser.FriendList += friends => Friends = friends.Select(fd => new FriendState(this, fd.userID, fd.username, fd.status, fd.ownsCoven)).ToFriendList(UI);
+            MessageParser.FriendRequestNotifications += notifications => PendingFriendRequests = notifications.ToDictionary(rd => rd.username, rd => rd.userID);
             // Add missing cases here
+            MessageParser.ConfirmFriendRequest += (userID, status, ownsCoven) =>
+            {
+                string username = PendingFriendRequests.First(fr => fr.Value == userID).Key;
+                PendingFriendRequests.Remove(username);
+                UI.Views.Notifications.Redraw();
+                Friends.Add(new FriendState(this, userID, username, status, ownsCoven));
+                UI.Views.Friends.Redraw();
+            };
+            MessageParser.SuccessfullyRemovedFriend += userID => Friends.RemoveKey<FriendList, uint, FriendState>(userID);
+            // Add missing cases here
+            MessageParser.FriendUpdate += (userID, status, ownsCoven) =>
+            {
+                FriendState friend = Friends[userID];
+                friend.OnlineStatus = status;
+                friend.OwnsCoven = ownsCoven;
+            };
+            MessageParser.FriendMessage += (userID, sent, message) => UI.Views.Home.AppendLine(sent ? "To {0}: {1}" : "From {0}: {1}", Friends[userID].Username, message);
             MessageParser.UserInformation += (username, townPoints, meritPoints) =>
             {
                 TownPoints = townPoints;
                 MeritPoints = meritPoints;
                 Username = username;
             };
-            // Add missing cases here
+            MessageParser.CreatePartyLobby += brand => Party = new PartyState(this, brand, true);
+            MessageParser.PartyInviteFailed += (username, status) => UI.StatusLine = string.Format("Failed to invite {0} to the party: {1}", username, status.ToString().ToDisplayName());
+            MessageParser.PartyInviteNotification += (userID, username) =>
+            {
+                PendingPartyInvitations.Add(username, userID);
+                UI.OpenSideView(UI.Views.Notifications);
+                UI.AudioAlert();
+            };
+            MessageParser.AcceptedPartyInvite += result =>
+            {
+                switch (result)
+                {
+                    case AcceptInvitationResult.SUCCESS:
+                        Party = new PartyState(this, Brand.CLASSIC, false);
+                        break;
+                    default:
+                        UI.StatusLine = string.Format("Failed to accept party invitation: {0}", result.ToString().ToDisplayName());
+                        break;
+                }
+            };
+            MessageParser.PendingPartyInviteStatus += (username, status) => Party.GetOrCreateInvitation(username).Status = status;
+            MessageParser.SuccessfullyLeftParty += () => Party = null;
+            MessageParser.PartyChat += (username, message) => UI.Views.Home.AppendLine("(Party) {0}: {1}", username, message);
+            MessageParser.PartyMemberLeft += username => Party.RemoveMember(username);
             MessageParser.SettingsInformation += (filterChat, muteMusic, muteEffects, shareSkin, classicSkinsOnly, displayPets, effectsVolume, musicVolume, language, unknown, tipBehaviour) =>
             {
                 _ShareSkin = shareSkin;
                 _QueueLanguage = language;
             };
-            // Add missing cases here
+            MessageParser.AddFriend += (username, userID, status, ownsCoven) => Friends.Add(new FriendState(this, userID, username, status, ownsCoven));
             MessageParser.ForcedLogout += () =>
             {
                 UI.CommandContext = CommandContext.AUTHENTICATING;
@@ -354,13 +457,18 @@ namespace ToSTextClient
             MessageParser.PurchasedPacks += packs => OwnedPacks = packs.ToList();
             MessageParser.PurchasedPets += pets => OwnedPets = pets.ToList();
             MessageParser.SetLastBonusWinTime += seconds => UI.Views.Home.FWotDTimer.Set((int)seconds);
-            MessageParser.EarnedAchievements52 += achievements =>
-            {
-                EarnedAchievements = achievements.ToList();
-                UI.Views.Home.ReplaceLine(1, "Number of achievements earned: {0}", EarnedAchievements.Count);
-            };
+            MessageParser.EarnedAchievements52 += achievements => EarnedAchievements = achievements.ToList();
             MessageParser.PurchasedLobbyIcons += lobbyIcons => OwnedLobbyIcons = lobbyIcons.ToList();
             MessageParser.PurchasedDeathAnimations += deathAnimations => OwnedDeathAnimations = deathAnimations.ToList();
+            // Add missing cases here
+            MessageParser.HostGivenToPlayer += username => Party.Members[username].PermissionLevel = PartyPermissionLevel.Host;
+            MessageParser.HostGivenToMe += () => Party.Members[Username].PermissionLevel = PartyPermissionLevel.Host;
+            MessageParser.KickedPlayer += username => Party.RemoveMember(username, true);
+            MessageParser.KickedMe += () => Party.RemoveMember(Username, true);
+            MessageParser.InvitePowersGivenToPlayer += username => Party.Members[username].PermissionLevel = PartyPermissionLevel.CanInvite;
+            MessageParser.InvitePowersGivenToMe += () => Party.Members[Username].PermissionLevel = PartyPermissionLevel.CanInvite;
+            // Add missing cases here
+            MessageParser.UpdateFriendUsername += (username, newUsername) => Friends[username].Username = newUsername;
             // Add missing cases here
             MessageParser.SteamPopup += () => Debug.WriteLine("Received S#68 (SteamPopup)");
             // Add missing cases here
@@ -384,6 +492,7 @@ namespace ToSTextClient
             MessageParser.RankedTimeoutDuration += seconds => UI.StatusLine = string.Format("Timed out for {0} seconds", seconds);
             // Add missing cases here
             MessageParser.ModeratorMessage += (modMessage, args) => UI.Views.Game.AppendLine(Resources.Of(modMessage));
+            MessageParser.ReferAFriendUpdate += (reward, tp) => TownPoints += tp ?? 0u;
             // Add missing cases here
             MessageParser.UserJoiningLobbyTooQuickly += () => UI.StatusLine = "Wait 15 seconds before rejoining";
             // Add missing cases here
@@ -673,7 +782,19 @@ namespace ToSTextClient
             };
             MessageParser.VIPTarget += player => UI.Views.Game.AppendLine(("{0} is the VIP", GREEN, null), GameState.ToName(player));
             MessageParser.PirateDuelOutcome += (attack, defense) => UI.Views.Game.AppendLine(("Your {1} against the Pirate's {0}: you have {2} the duel", RED), attack, defense, (byte)attack == ((byte)defense + 1) % 3 ? "lost" : "won");
-            // Add missing cases here
+            MessageParser.HostSetPartyConfigResult += (brand, mode, result) =>
+            {
+                switch (result)
+                {
+                    case SetConfigResult.SUCCESS:
+                        Party.Brand = brand;
+                        Party.SelectedMode = mode;
+                        break;
+                    default:
+                        UI.StatusLine = string.Format("Failed to set party config: {0}", result.ToString().ToDisplayName());
+                        break;
+                }
+            };
             MessageParser.ActiveGameModes += gameModes =>
             {
                 ActiveGameModes.Clear();
@@ -929,6 +1050,25 @@ namespace ToSTextClient
         public static void ForEach<T>(this IEnumerable<T> enumerable, Action<T> action)
         {
             foreach (T t in enumerable) action(t);
+        }
+
+        public static FriendList ToFriendList(this IEnumerable<FriendState> friends, ITextUI ui)
+        {
+            FriendList friendList = new FriendList(ui);
+            foreach (FriendState friend in friends) friendList.Add(friend);
+            return friendList;
+        }
+
+        public static bool RemoveKey<T, K, V>(this T src, K key) where T : IReadOnlyDictionary<K, V>, ICollection<V> => src.TryGetValue(key, out V value) && src.Remove(value);
+        public static V GetOrCreate<K, V>(this IDictionary<K, V> dict, K key, Func<V> gen)
+        {
+            if (!dict.TryGetValue(key, out V value)) dict.Add(key, value = gen());
+            return value;
+        }
+        public static PartyInvitation GetOrCreateInvitation(this PartyState party, string username)
+        {
+            if (!party.Invitations.TryGetValue(username, out PartyInvitation invitation)) invitation = party.AddInvitation(username);
+            return invitation;
         }
     }
 }

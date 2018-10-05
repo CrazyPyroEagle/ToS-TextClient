@@ -16,6 +16,9 @@ namespace ToSTextClient
         public IHomeView Home { get; protected set; }
         public IView GameModes { get; protected set; }
         public IInputView Settings { get; protected set; }
+        public IView Friends { get; protected set; }
+        public IView Notifications { get; protected set; }
+        public IView Party { get; protected set; }
         public IGameView Game { get; protected set; }
         public IView Players { get; protected set; }
         public IView Roles { get; protected set; }
@@ -34,9 +37,12 @@ namespace ToSTextClient
             ui.RegisterMainView(Exception = new ExceptionView(), "exception");
             ui.RegisterMainView(Auth = new AuthView(), "auth", "authentication", "login");
             ui.RegisterMainView(Home = new HomeView(CommandContext.HOME.Set(), 60, 2, GetGame), "home");
-            ui.RegisterSideView(GameModes = new ListView(" # Game Modes", () => ui.Game.ActiveGameModes.Select(gm => ui.Game.Resources.GetMetadata(gm)).Where(gm => gm.PermissionLevel <= ui.Game.PermissionLevel).Select(gm => (FormattedString)gm.Name), CommandContext.HOME.Set(), 25), "modes", "game modes", "gamemodes");
+            ui.RegisterSideView(GameModes = new ListView(" # Game Modes", () => ui.Game.ActiveGameModes.Select(gm => ui.Game.Resources.GetMetadata(gm)).Where(gm => gm.PermissionLevel <= ui.Game.PermissionLevel).Select(gm => (FormattedString)gm.Name), CommandContext.HOME.Set(), 25), "modes", "gamemodes", "game modes");
             ui.RegisterSideView(Settings = new SettingsView(GetGame), "settings", "options");
-            ui.RegisterMainView(Game = new GameView(CommandExtensions.IsInLobbyOrGame, 60, 20, () => ui.Game.GameState), "game");
+            ui.RegisterSideView(Friends = new ListView(" # Friends", () => ui.Game.Friends.Values.Select(f => f.ToDisplay()), CommandContext.HOME.Set(), 22), "friends", "friendlist", "friend list");
+            ui.RegisterSideView(Notifications = new ListView(" # Notifications", () => ui.Game.PendingFriendRequests.Keys.Select(fr => (FormattedString)string.Format("FR {0}", fr)).Concat(ui.Game.PendingPartyInvitations.Keys.Select(pi => (FormattedString)string.Format("PI {0}", pi))), CommandContext.HOME.Set(), 23), "notifications");
+            ui.RegisterSideView(Party = new PartyView(CommandContext.HOME.Set().And(c => ui.Game.Party != null), GetGame), "party");
+            ui.RegisterMainView(Game = new GameView(CommandExtensions.IsInLobbyOrGame, 60, 20, GetGame), "game");
             ui.RegisterSideView(Players = new ListView(" # Players", () => ui.Game.GameState.Players.Select(ps => (FormattedString)(ps.Dead ? "" : ui.Game.GameState.ToName(ps.ID, true))), CommandExtensions.IsInLobbyOrGame, 25), "players", "playerlist", "player list");
             ui.RegisterSideView(Roles = new ListView(" # Roles", () => ui.Game.GameState.Roles.Select(r => ui.Game.Resources.Of(r)), CommandExtensions.IsInLobbyOrGame, 25), "roles", "rolelist", "role list");
             ui.RegisterSideView(Graveyard = new ListView(" # Graveyard", () => ui.Game.GameState.Graveyard.Select(ps => ui.Game.GameState.ToName(ps, true)), CommandExtensions.IsInGame, 40), "graveyard", "deaths");
@@ -191,6 +197,8 @@ namespace ToSTextClient
 
         public override (int x, int y) Cursor => (selectedLine == 1 ? usernameCursor + 10 : selectedLine == 2 && password.Length == 0 ? 10 : 18, selectedLine);
 
+        public bool AllowGeneralInput => false;
+
         public event Action<Socket, string, SecureString> OnAuthenticate;
 
         private int selectedLine;
@@ -234,6 +242,8 @@ namespace ToSTextClient
             password.Clear();
             passwordCursor = 0;
         }
+
+        public void GeneralInput(string input) => throw new NotImplementedException();
 
         private void Insert(char c)
         {
@@ -402,7 +412,13 @@ namespace ToSTextClient
         public INamedTimer FWotDTimer { get; protected set; }
         public INamedTimer QueueTimer { get; protected set; }
 
-        public HomeView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, Func<TextClient> getGame) : base(isAllowed, minimumWidth, minimumHeight) => PinnedView = new UserInfoView(this, getGame);
+        public bool AllowGeneralInput => getGame().Party != null;
+
+        private readonly Func<TextClient> getGame;
+
+        public HomeView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, Func<TextClient> getGame) : base(isAllowed, minimumWidth, minimumHeight, null) => PinnedView = new UserInfoView(this, this.getGame = getGame);
+
+        public void GeneralInput(string input) => getGame().Parser.SendPartyMessage(input);
 
         protected class UserInfoView : BasePinnedView
         {
@@ -438,9 +454,15 @@ namespace ToSTextClient
 
     public class GameView : TextView, IGameView
     {
-        public GameView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, Func<GameState> getState) : base(isAllowed, minimumWidth, minimumHeight, null) => PinnedView = new NameView(this, getState);
+        private readonly Func<TextClient> getGame;
 
         public IEditableNamedTimer PhaseTimer { get; protected set; }
+
+        public bool AllowGeneralInput => true;
+
+        public GameView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, Func<TextClient> getGame) : base(isAllowed, minimumWidth, minimumHeight, null) => PinnedView = new NameView(this, this.getGame = getGame);
+
+        public void GeneralInput(string input) => getGame().Parser.SendChatBoxMessage(input);
 
         protected class NameView : BasePinnedView
         {
@@ -453,18 +475,18 @@ namespace ToSTextClient
             }
 
             private readonly GameView parent;
-            private readonly Func<GameState> getState;
+            private readonly Func<TextClient> getGame;
 
-            public NameView(GameView parent, Func<GameState> getState) : base(CommandExtensions.IsInLobbyOrGame, 23, 2, null)
+            public NameView(GameView parent, Func<TextClient> getGame) : base(CommandExtensions.IsInLobbyOrGame, 23, 2, null)
             {
                 this.parent = parent;
-                this.getState = getState;
+                this.getGame = getGame;
                 parent.PhaseTimer = new BaseEditableNamedTimer(this, null);
             }
 
             public override IEnumerable<FormattedString> Lines(int width)
             {
-                GameState state = getState();
+                GameState state = getGame().GameState;
                 if (state.Self == null) yield break;
                 yield return state.ToName(state.Self, true);
             }
@@ -483,6 +505,30 @@ namespace ToSTextClient
         }
 
         public override IEnumerable<FormattedString> Lines(int width) => _Lines().Prepend(title);
+    }
+
+    public class PartyView : BaseView
+    {
+        private readonly Func<TextClient> getGame;
+
+        public PartyView(Func<CommandContext, bool> isAllowed, Func<TextClient> getGame) : base(isAllowed, 30, 4, null) => this.getGame = getGame;
+
+        public override IEnumerable<FormattedString> Lines(int width)
+        {
+            TextClient game = getGame();
+            PartyState party = game.Party;
+            if (party == null) yield break;
+            yield return " # Party";
+            yield return party.Brand.ToString().ToDisplayName();
+            yield return game.Resources.GetMetadata(party.SelectedMode).Name;
+            yield return "";
+            yield return " # Members";
+            foreach (PartyMember member in party.Members.Values) yield return member.ToDisplay();
+            if (party.Invitations.Count == 0) yield break;
+            yield return "";
+            yield return " # Invitations";
+            foreach (PartyInvitation invitation in party.Invitations.Values) yield return invitation.ToDisplay();
+        }
     }
 
     public class WillView : BaseView, IWillView
@@ -789,10 +835,14 @@ namespace ToSTextClient
     {
         public Exception Exception { get => _Exception; set { _Exception = value; Redraw(); } }
 
+        public bool AllowGeneralInput => false;
+
         private Exception _Exception;
 
         public ExceptionView() : base(context => true, 60, 10, null) { }
 
         public override IEnumerable<FormattedString> Lines(int width) => Exception?.ToString()?.Split('\r').Select(s => (FormattedString)s) ?? Enumerable.Empty<FormattedString>().Append("False");
+
+        public void GeneralInput(string input) => throw new NotImplementedException();
     }
 }

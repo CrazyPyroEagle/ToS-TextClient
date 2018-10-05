@@ -25,7 +25,7 @@ namespace ToSTextClient
 
         protected readonly object drawLock;
 
-        protected Dictionary<IView, MainViewRenderer> mainRenderers;
+        protected Dictionary<IMainView, MainViewRenderer> mainRenderers;
         protected Dictionary<IView, SideViewRenderer> sideRenderers;
         protected MainViewRenderer mainView;
         protected int mainWidth;
@@ -64,7 +64,7 @@ namespace ToSTextClient
             openCommand = new CommandGroup("Open the {0} view", this, "View", "Views");
             closeCommand = new CommandGroup("Close the {0} view", this, "View", "Views");
 
-            mainRenderers = new Dictionary<IView, MainViewRenderer>();
+            mainRenderers = new Dictionary<IMainView, MainViewRenderer>();
             sideRenderers = new Dictionary<IView, SideViewRenderer>();
             Views = new ViewRegistry(this);
             mainView = mainRenderers[Views.Auth];
@@ -173,7 +173,7 @@ namespace ToSTextClient
                             StatusLine = string.Format("Failed to parse command: {0}", e.Message);
                         }
                     }
-                    else Game.Parser.SendChatBoxMessage(input);
+                    else mainView.View.GeneralInput(input);
                 }
                 catch (Exception e)
                 {
@@ -191,7 +191,7 @@ namespace ToSTextClient
             Views.Help.Redraw();
         }
 
-        public void RegisterMainView(IView view, params string[] names)
+        public void RegisterMainView(IMainView view, params string[] names)
         {
             lock (drawLock)
             {
@@ -238,7 +238,7 @@ namespace ToSTextClient
 
         public void AudioAlert() => System.Console.Beep();
 
-        public void SetMainView(IView view)
+        public void SetMainView(IMainView view)
         {
             if (!mainRenderers.TryGetValue(view, out MainViewRenderer renderer)) throw new ArgumentException("attempt to set unregistered view as main view");
             lock (drawLock)
@@ -280,6 +280,23 @@ namespace ToSTextClient
         public void RedrawTimer()
         {
             lock (drawLock) RedrawPinned();
+        }
+
+        public void RedrawCursor()
+        {
+            lock (drawLock)
+            {
+                bool state = StartRendering();
+                Console.CursorTop = fullHeight - 1;
+                Console.CursorLeft = 0;
+                Console.ForegroundColor = TextClient.WHITE;
+                if (!mainView.View.AllowGeneralInput) commandMode = true;
+                Console.Write(commandMode ? "/ " : "> ");
+                if (inputContext != null || inputBuffer.Length == 0) Console.ForegroundColor = TextClient.GRAY;
+                Console.Write((inputContext != null ? EDITING_STATUS : inputBuffer.Length == 0 ? _StatusLine ?? (commandMode ? DEFAULT_COMMAND_STATUS : DEFAULT_STATUS) : inputBuffer.ToString()).PadRightHard(mainWidth - 2));
+                Console.ForegroundColor = TextClient.WHITE;
+                ResetCursor(state);
+            }
         }
 
         protected void RedrawMainView()
@@ -351,22 +368,6 @@ namespace ToSTextClient
                     RedrawAll();
                     return;
                 }
-                ResetCursor(state);
-            }
-        }
-
-        protected void RedrawCursor()
-        {
-            lock (drawLock)
-            {
-                bool state = StartRendering();
-                Console.CursorTop = fullHeight - 1;
-                Console.CursorLeft = 0;
-                Console.ForegroundColor = TextClient.WHITE;
-                Console.Write(commandMode ? "/ " : "> ");
-                if (inputContext != null || inputBuffer.Length == 0) Console.ForegroundColor = TextClient.GRAY;
-                Console.Write((inputContext != null ? EDITING_STATUS : inputBuffer.Length == 0 ? _StatusLine ?? (commandMode ? DEFAULT_COMMAND_STATUS : DEFAULT_STATUS) : inputBuffer.ToString()).PadRightHard(mainWidth - 2));
-                Console.ForegroundColor = TextClient.WHITE;
                 ResetCursor(state);
             }
         }
@@ -458,7 +459,7 @@ namespace ToSTextClient
             if (inputContext != null)
             {
                 int x, y;
-                if (mainRenderers.TryGetValue(inputContext, out MainViewRenderer mainRenderer)) (x, y) = mainRenderer.ToAbsolute(inputContext.Cursor);
+                if (inputContext is IMainView mainInputContext && mainRenderers.TryGetValue(mainInputContext, out MainViewRenderer mainRenderer)) (x, y) = mainRenderer.ToAbsolute(inputContext.Cursor);
                 else if (sideRenderers.TryGetValue(inputContext, out SideViewRenderer sideRenderer)) (x, y) = sideRenderer.ToAbsolute(inputContext.Cursor);
                 else throw new InvalidOperationException("input context is not a main view or a side view");
                 if (y < 0) ScrollSideViews(y);
@@ -481,7 +482,7 @@ namespace ToSTextClient
                 CommandContext old = _CommandContext;
                 _CommandContext = value;
                 bool oldCommandMode = commandMode;
-                if (CommandContext == CommandContext.AUTHENTICATING || CommandContext == CommandContext.HOME) commandMode = true;
+                if (!mainView.View.AllowGeneralInput) commandMode = true;
                 else if (bufferIndex == 0) commandMode = false;
                 if (commandMode != oldCommandMode) RedrawCursor();
                 if (mainView.SideViews.Where(view => view.View.IsAllowed(old) != view.View.IsAllowed(value)).Count() > 0) RedrawSideViews();
@@ -493,7 +494,7 @@ namespace ToSTextClient
         {
             lock (drawLock)
             {
-                commandMode = CommandContext == CommandContext.AUTHENTICATING || CommandContext == CommandContext.HOME;
+                commandMode = !mainView.View.AllowGeneralInput;
                 inputBuffer.Clear();
                 bufferIndex = 0;
                 RedrawCursor();
@@ -521,10 +522,7 @@ namespace ToSTextClient
                                     RedrawCursor();
                                     break;
                                 }
-                                else if (commandMode && mainView == Views.Game && bufferIndex == 0 && key.KeyChar == '/')
-                                {
-                                    commandMode = false;
-                                }
+                                else if (commandMode && mainView.View.AllowGeneralInput && bufferIndex == 0 && key.KeyChar == '/') commandMode = false;
                                 inputBuffer.Insert(bufferIndex++, key.KeyChar);
                                 RedrawCursor();
                             }
@@ -536,7 +534,7 @@ namespace ToSTextClient
                                 inputBuffer.Remove(--bufferIndex, 1);
                                 RedrawCursor();
                             }
-                            else if (commandMode && mainView.View == Views.Game)     // Replace mainView.View == Views.Game with an interface method (getter?)
+                            else if (commandMode && mainView.View.AllowGeneralInput)
                             {
                                 commandMode = false;
                                 Console.CursorLeft = 0;
@@ -559,7 +557,7 @@ namespace ToSTextClient
                                 RedrawCursor();
                                 break;
                             }
-                            if (mainView.View == Views.Game) commandMode = false;
+                            if (mainView.View.AllowGeneralInput) commandMode = false;
                             inputBuffer.Clear();
                             bufferIndex = 0;
                             RedrawCursor();
@@ -594,6 +592,7 @@ namespace ToSTextClient
                             {
                                 string input;
                                 (commandMode, input) = inputHistory[--historyIndex];
+                                if (!mainView.View.AllowGeneralInput) commandMode = true;
                                 inputBuffer.Clear();
                                 inputBuffer.Append(input);
                                 bufferIndex = input.Length;
@@ -614,6 +613,7 @@ namespace ToSTextClient
                             {
                                 string input;
                                 (commandMode, input) = inputHistory[++historyIndex];
+                                if (!mainView.View.AllowGeneralInput) commandMode = true;
                                 inputBuffer.Clear();
                                 inputBuffer.Append(input);
                                 bufferIndex = input.Length;
@@ -621,7 +621,7 @@ namespace ToSTextClient
                             }
                             else if (historyIndex == inputHistory.Count - 1)
                             {
-                                commandMode = CommandContext.HasFlag(CommandContext.AUTHENTICATING) || CommandContext.HasFlag(CommandContext.HOME);
+                                commandMode = !mainView.View.AllowGeneralInput;
                                 inputBuffer.Clear();
                                 bufferIndex = 0;
                                 RedrawCursor();
@@ -766,10 +766,12 @@ namespace ToSTextClient
 
         protected class MainViewRenderer : ViewRenderer
         {
+            public new IMainView View { get; }
             public IList<SideViewRenderer> SideViews { get; }
 
-            public MainViewRenderer(ConsoleUI ui, IView view) : base(ui, view)
+            public MainViewRenderer(ConsoleUI ui, IMainView view) : base(ui, view)
             {
+                View = view;
                 SideViews = new List<SideViewRenderer>();
                 if (view is ITextView textView)
                 {

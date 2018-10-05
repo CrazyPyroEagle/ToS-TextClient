@@ -20,13 +20,14 @@ namespace ToSTextClient
         bool RunInput { get; set; }
 
         void RegisterCommand(Command command, params string[] names);
-        void RegisterMainView(IView view, params string[] names);
+        void RegisterMainView(IMainView view, params string[] names);
         void RegisterSideView(IView view, params string[] names);
-        void SetMainView(IView view);
+        void SetMainView(IMainView view);
         void OpenSideView(IView view);
         void CloseSideView(IView view);
         void SetInputContext(IInputView view);
         void RedrawTimer();
+        void RedrawCursor();
         void AudioAlert();
         void Run();
     }
@@ -42,6 +43,13 @@ namespace ToSTextClient
 
         IEnumerable<FormattedString> Lines(int width);
         void Redraw();
+    }
+
+    public interface IMainView : IView
+    {
+        bool AllowGeneralInput { get; }
+
+        void GeneralInput(string input);
     }
 
     public interface IPinnedView : IView
@@ -61,13 +69,13 @@ namespace ToSTextClient
         void Clear();
     }
 
-    public interface IHomeView : ITextView
+    public interface IHomeView : ITextView, IMainView
     {
         INamedTimer FWotDTimer { get; }
         INamedTimer QueueTimer { get; }
     }
 
-    public interface IGameView : ITextView
+    public interface IGameView : ITextView, IMainView
     {
         IEditableNamedTimer PhaseTimer { get; }
     }
@@ -92,7 +100,7 @@ namespace ToSTextClient
         event Action OnShowHelp;
     }
 
-    public interface IExceptionView : IView
+    public interface IExceptionView : IMainView
     {
         Exception Exception { get; set; }
     }
@@ -108,7 +116,7 @@ namespace ToSTextClient
         void Close();
     }
 
-    public interface IAuthView : IInputView
+    public interface IAuthView : IInputView, IMainView
     {
         FormattedString Status { set; }
 
