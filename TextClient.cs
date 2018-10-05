@@ -80,16 +80,6 @@ namespace ToSTextClient
         public MessageParser Parser { get; protected set; }
         public ServerMessageParser MessageParser { get; protected set; }
         public ResourceLoader Resources { get; protected set; }
-        public int Timer
-        {
-            get => _Timer;
-            set { if ((_Timer = value) > 0) UI.RedrawTimer(); else UI.TimerVisible = false; }
-        }
-        public string TimerText
-        {
-            get => _TimerText;
-            set { _TimerText = value; Task.Run(UpdateTimer); UI.RedrawTimer(); }
-        }
 
         private Socket socket;
         private byte[] buffer;
@@ -100,9 +90,6 @@ namespace ToSTextClient
         private bool _ShareSkin;
         private Language _QueueLanguage;
         private GameState _GameState;
-        private int _Timer;
-        private string _TimerText;
-        private volatile int timerIndex;
 
         static void Main(string[] args)
         {
@@ -320,13 +307,12 @@ namespace ToSTextClient
             MessageParser.HostClickedOnRemoveButton += slot => GameState.RemoveRole(slot);
             MessageParser.HostClickedOnStartButton += () =>
             {
-                Timer = 10;
-                TimerText = "Start";
+                UI.Views.Game.PhaseTimer.Set("Start", 10);
                 UI.Views.Game.AppendLine(("The game will start in 10 seconds", GREEN));
             };
             MessageParser.CancelStartCooldown += () =>
             {
-                Timer = 0;
+                UI.Views.Game.PhaseTimer.Set(0);
                 UI.Views.Game.AppendLine(("The start cooldown was cancelled", RED));
             };
             MessageParser.AssignNewHost += player =>
@@ -367,7 +353,7 @@ namespace ToSTextClient
             MessageParser.UpdatePaidCurrency += tp => TownPoints = tp;
             MessageParser.PurchasedPacks += packs => OwnedPacks = packs.ToList();
             MessageParser.PurchasedPets += pets => OwnedPets = pets.ToList();
-            MessageParser.SetLastBonusWinTime += seconds => UI.Views.Home.ReplaceLine(0, "Next FWotD bonus is available in {0} seconds", seconds);
+            MessageParser.SetLastBonusWinTime += seconds => UI.Views.Home.FWotDTimer.Set((int)seconds);
             MessageParser.EarnedAchievements52 += achievements =>
             {
                 EarnedAchievements = achievements.ToList();
@@ -381,20 +367,17 @@ namespace ToSTextClient
             MessageParser.StartRankedQueue += (requeue, seconds) =>
             {
                 if (requeue) UI.StatusLine = "Requeued due to a lack of players";
-                Timer = (int)seconds;
-                TimerText = "Queue";
+                UI.Views.Home.QueueTimer.Set((int)seconds);
             };
             MessageParser.LeaveRankedQueue += () =>
             {
-                Timer = 0;
-                TimerText = null;
+                UI.Views.Home.QueueTimer.Set(0);
                 UI.StatusLine = "You have left the ranked queue";
             };
             MessageParser.AcceptRankedPopup += () =>
             {
                 UI.StatusLine = "Are you ready for the Ranked game?";
-                Timer = 10;
-                TimerText = "Queue Popup";
+                UI.Views.Home.QueueTimer.Set(10);
                 UI.AudioAlert();
             };
             // Add missing cases here
@@ -434,15 +417,13 @@ namespace ToSTextClient
             MessageParser.StartDiscussion += () =>
             {
                 UI.Views.Game.AppendLine("Discussion may now begin");
-                Timer = Resources.GetMetadata(GameState.GameMode).RapidMode ? 15 : 45;
-                TimerText = "Discussion";
+                UI.Views.Game.PhaseTimer.Set("Discussion", Resources.GetMetadata(GameState.GameMode).RapidMode ? 15 : 45);
             };
             MessageParser.StartVoting += _ =>
             {
                 UI.CommandContext = CommandContext.VOTING;
                 UI.Views.Game.AppendLine(("{0} votes are needed to lynch someone", GREEN, null), (GameState.Players.Where(ps => !ps.Dead && !ps.Left).Count() + 2) / 2);
-                Timer = 30;
-                TimerText = "Voting";
+                UI.Views.Game.PhaseTimer.Set("Voting", 30);
             };
             MessageParser.StartDefenseTransition += player =>
             {
@@ -453,15 +434,13 @@ namespace ToSTextClient
             {
                 UI.CommandContext = CommandContext.JUDGEMENT;
                 UI.Views.Game.AppendLine(("You may now vote guilty or innocent", GREEN, null));
-                Timer = 20;
-                TimerText = "Judgement";
+                UI.Views.Game.PhaseTimer.Set("Judgement", 20);
             };
             MessageParser.TrialFoundGuilty += (guiltyVotes, innocentVotes) =>
             {
                 UI.CommandContext = CommandContext.DISCUSSION;
                 UI.Views.Game.AppendLine(("Judgement results: {0} guilty - {1} innocent", GREEN, null), guiltyVotes, innocentVotes);
-                Timer = 5;
-                TimerText = "Last Words";
+                UI.Views.Game.PhaseTimer.Set("Last Words", 5);
             };
             MessageParser.TrialFoundNotGuilty += (guiltyVotes, innocentVotes) =>
             {
@@ -574,8 +553,7 @@ namespace ToSTextClient
             MessageParser.ResurrectionSetAlive += player => GameState.Players[(int)player].Dead = false;
             MessageParser.StartDefense += () =>
             {
-                Timer = 20;
-                TimerText = "Defense";
+                UI.Views.Game.PhaseTimer.Set("Defense", 20);
                 UI.Views.Game.AppendLine(("What is your defense?", GREEN, null));
             };
             MessageParser.UserLeftDuringSelection += player =>
@@ -758,11 +736,6 @@ namespace ToSTextClient
                 Debug.WriteLine("Socket disposed");
                 UI.CommandContext = CommandContext.AUTHENTICATING;
             }
-        }
-
-        private async Task UpdateTimer()
-        {
-            for (int thisInc = ++timerIndex; timerIndex == thisInc && Timer > 0; Timer--) await Task.Delay(1000);
         }
 
         // Modified from https://stackoverflow.com/a/40869537

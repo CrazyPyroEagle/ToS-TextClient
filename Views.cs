@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Security;
 using System.Text;
+using System.Threading.Tasks;
 using ToSParser;
 
 namespace ToSTextClient
@@ -12,10 +13,10 @@ namespace ToSTextClient
     {
         public IExceptionView Exception { get; protected set; }
         public IAuthView Auth { get; protected set; }
-        public ITextView Home { get; protected set; }
+        public IHomeView Home { get; protected set; }
         public IView GameModes { get; protected set; }
         public IInputView Settings { get; protected set; }
-        public ITextView Game { get; protected set; }
+        public IGameView Game { get; protected set; }
         public IView Players { get; protected set; }
         public IView Roles { get; protected set; }
         public IView Graveyard { get; protected set; }
@@ -32,10 +33,10 @@ namespace ToSTextClient
             TextClient GetGame() => ui.Game;
             ui.RegisterMainView(Exception = new ExceptionView(), "exception");
             ui.RegisterMainView(Auth = new AuthView(), "auth", "authentication", "login");
-            ui.RegisterMainView(Home = new TextView(CommandContext.HOME.Set(), 60, 2, new UserInfoView(GetGame)), "home");
+            ui.RegisterMainView(Home = new HomeView(CommandContext.HOME.Set(), 60, 2, GetGame), "home");
             ui.RegisterSideView(GameModes = new ListView(" # Game Modes", () => ui.Game.ActiveGameModes.Select(gm => ui.Game.Resources.GetMetadata(gm)).Where(gm => gm.PermissionLevel <= ui.Game.PermissionLevel).Select(gm => (FormattedString)gm.Name), CommandContext.HOME.Set(), 25), "modes", "game modes", "gamemodes");
             ui.RegisterSideView(Settings = new SettingsView(GetGame), "settings", "options");
-            ui.RegisterMainView(Game = new TextView(CommandExtensions.IsInLobbyOrGame, 60, 20, new NameView(() => ui.Game.GameState)), "game");
+            ui.RegisterMainView(Game = new GameView(CommandExtensions.IsInLobbyOrGame, 60, 20, () => ui.Game.GameState), "game");
             ui.RegisterSideView(Players = new ListView(" # Players", () => ui.Game.GameState.Players.Select(ps => (FormattedString)(ps.Dead ? "" : ui.Game.GameState.ToName(ps.ID, true))), CommandExtensions.IsInLobbyOrGame, 25), "players", "playerlist", "player list");
             ui.RegisterSideView(Roles = new ListView(" # Roles", () => ui.Game.GameState.Roles.Select(r => ui.Game.Resources.Of(r)), CommandExtensions.IsInLobbyOrGame, 25), "roles", "rolelist", "role list");
             ui.RegisterSideView(Graveyard = new ListView(" # Graveyard", () => ui.Game.GameState.Graveyard.Select(ps => ui.Game.GameState.ToName(ps, true)), CommandExtensions.IsInGame, 40), "graveyard", "deaths");
@@ -55,14 +56,14 @@ namespace ToSTextClient
 
         public virtual int MinimumHeight { get; protected set; }
 
-        public virtual IView PinnedView { get; set; }
+        public virtual IPinnedView PinnedView { get; set; }
 
         public event Action<string, Exception> OnException;
         public event Action OnTextChange;
 
         protected Func<CommandContext, bool> isAllowed;
 
-        protected BaseView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, IView pinned)
+        protected BaseView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, IPinnedView pinned)
         {
             this.isAllowed = isAllowed;
             MinimumWidth = minimumWidth;
@@ -77,6 +78,51 @@ namespace ToSTextClient
         public virtual bool IsAllowed(CommandContext activeContext) => isAllowed(activeContext);
 
         protected void Handle(string msg, Exception ex) => OnException?.Invoke(msg, ex);
+    }
+
+    public abstract class BasePinnedView : BaseView, IPinnedView
+    {
+        protected BasePinnedView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, IPinnedView pinned) : base(isAllowed, minimumWidth, minimumHeight, pinned) { }
+
+        public virtual IEnumerable<INamedTimer> Timers => Enumerable.Empty<INamedTimer>();
+
+        protected class BaseNamedTimer : INamedTimer
+        {
+            public virtual string Name { get; protected set; }
+            public virtual int Value { get => _Value; set { _Value = value; parent.Redraw(); } }
+
+            protected readonly IPinnedView parent;
+            protected int _Value;
+            private int timerIndex;
+
+            public BaseNamedTimer(IPinnedView parent, string name)
+            {
+                this.parent = parent;
+                Name = name;
+            }
+
+            public virtual void Set(int value)
+            {
+                Value = value;
+                Task.Run(UpdateTimer);
+            }
+
+            protected virtual async Task UpdateTimer()
+            {
+                for (int thisInc = ++timerIndex; timerIndex == thisInc && Value > 0; Value--) await Task.Delay(1000);
+            }
+        }
+
+        protected class BaseEditableNamedTimer : BaseNamedTimer, IEditableNamedTimer
+        {
+            public BaseEditableNamedTimer(IPinnedView parent, string name) : base(parent, name) { }
+
+            public void Set(string name, int value)
+            {
+                Name = name;
+                Set(value);
+            }
+        }
     }
 
     public abstract class BaseInputView : BaseView, IInputView
@@ -95,7 +141,7 @@ namespace ToSTextClient
         protected event Action OnEnd;
         protected event Action OnEnter;
 
-        protected BaseInputView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, IView pinned) : base(isAllowed, minimumWidth, minimumHeight, pinned) { }
+        protected BaseInputView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, IPinnedView pinned) : base(isAllowed, minimumWidth, minimumHeight, pinned) { }
 
         public virtual void Close() { }
 
@@ -324,7 +370,7 @@ namespace ToSTextClient
 
         private readonly IList<FormattedString> _Lines;
 
-        public TextView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, IView pinned = null) : base(isAllowed, minimumWidth, minimumHeight, pinned) => _Lines = new List<FormattedString>();
+        public TextView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, IPinnedView pinned = null) : base(isAllowed, minimumWidth, minimumHeight, pinned) => _Lines = new List<FormattedString>();
 
         public override IEnumerable<FormattedString> Lines(int width) => _Lines;
 
@@ -348,6 +394,80 @@ namespace ToSTextClient
         {
             _Lines.Clear();
             Redraw();
+        }
+    }
+
+    public class HomeView : TextView, IHomeView
+    {
+        public INamedTimer FWotDTimer { get; protected set; }
+        public INamedTimer QueueTimer { get; protected set; }
+
+        public HomeView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, Func<TextClient> getGame) : base(isAllowed, minimumWidth, minimumHeight) => PinnedView = new UserInfoView(this, getGame);
+
+        protected class UserInfoView : BasePinnedView
+        {
+            public override IEnumerable<INamedTimer> Timers
+            {
+                get
+                {
+                    yield return parent.FWotDTimer;
+                    yield return parent.QueueTimer;
+                }
+            }
+
+            private readonly HomeView parent;
+            private readonly Func<TextClient> getGame;
+
+            public UserInfoView(HomeView parent, Func<TextClient> getGame) : base(CommandContext.HOME.Set(), 20, 2, null)
+            {
+                this.parent = parent;
+                this.getGame = getGame;
+                parent.FWotDTimer = new BaseNamedTimer(this, "FWotD Bonus");
+                parent.QueueTimer = new BaseNamedTimer(this, "Queue");
+            }
+
+            public override IEnumerable<FormattedString> Lines(int width)
+            {
+                TextClient game = getGame();
+                if (game.Username == null) yield break;
+                yield return game.Username;
+                yield return string.Format("{0} TP / {1} MP", game.TownPoints, game.MeritPoints);
+            }
+        }
+    }
+
+    public class GameView : TextView, IGameView
+    {
+        public GameView(Func<CommandContext, bool> isAllowed, int minimumWidth, int minimumHeight, Func<GameState> getState) : base(isAllowed, minimumWidth, minimumHeight, null) => PinnedView = new NameView(this, getState);
+
+        public IEditableNamedTimer PhaseTimer { get; protected set; }
+
+        protected class NameView : BasePinnedView
+        {
+            public override IEnumerable<INamedTimer> Timers
+            {
+                get
+                {
+                    yield return parent.PhaseTimer;
+                }
+            }
+
+            private readonly GameView parent;
+            private readonly Func<GameState> getState;
+
+            public NameView(GameView parent, Func<GameState> getState) : base(CommandExtensions.IsInLobbyOrGame, 23, 2, null)
+            {
+                this.parent = parent;
+                this.getState = getState;
+                parent.PhaseTimer = new BaseEditableNamedTimer(this, null);
+            }
+
+            public override IEnumerable<FormattedString> Lines(int width)
+            {
+                GameState state = getState();
+                if (state.Self == null) yield break;
+                yield return state.ToName(state.Self, true);
+            }
         }
     }
 
@@ -662,35 +782,6 @@ namespace ToSTextClient
                     return getGame().QueueLanguage.ToString().Length;
             }
             return 0;
-        }
-    }
-
-    public class UserInfoView : BaseView
-    {
-        private readonly Func<TextClient> getGame;
-
-        public UserInfoView(Func<TextClient> getGame) : base(CommandContext.HOME.Set(), 20, 2, null) => this.getGame = getGame;
-
-        public override IEnumerable<FormattedString> Lines(int width)
-        {
-            TextClient game = getGame();
-            if (game.Username == null) yield break;
-            yield return game.Username;
-            yield return string.Format("{0} TP / {1} MP", game.TownPoints, game.MeritPoints);
-        }
-    }
-
-    public class NameView : BaseView
-    {
-        private readonly Func<GameState> getState;
-
-        public NameView(Func<GameState> getState) : base(CommandExtensions.IsInLobbyOrGame, 23, 2, null) => this.getState = getState;
-
-        public override IEnumerable<FormattedString> Lines(int width)
-        {
-            GameState state = getState();
-            if (state.Self == null) yield break;
-            yield return state.ToName(state.Self, true);
         }
     }
 

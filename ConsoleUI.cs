@@ -15,19 +15,13 @@ namespace ToSTextClient
         protected const string DEFAULT_STATUS = "Type /? for help";
         protected const string DEFAULT_COMMAND_STATUS = "Type ? for help";
         protected const string EDITING_STATUS = "Editing, press ESC to close";
-
-
+        
         public TextClient Game { get; protected set; }
         public ViewRegistry Views { get; protected set; }
         public string StatusLine { get => _StatusLine; set { _StatusLine = value; RedrawCursor(); } }
         public IReadOnlyDictionary<string, Command> Commands => _Commands;
         public CommandContext CommandContext { get => _CommandContext; set => UpdateCommandMode(value); }
         public bool RunInput { get => _RunInput; set => _RunInput = value; }
-        public bool TimerVisible
-        {
-            get => _TimerVisible;
-            set { lock (drawLock) { _TimerVisible = value; RedrawPinned(); } }
-        }
 
         protected readonly object drawLock;
 
@@ -41,7 +35,6 @@ namespace ToSTextClient
         protected int fullHeight;
         protected int sideEnd;
         protected int pinnedHeight;
-        protected bool _TimerVisible;
 
         protected StringBuilder inputBuffer;
         protected int bufferIndex;
@@ -259,9 +252,6 @@ namespace ToSTextClient
                 SetInputContext(null);
                 mainView = renderer;
                 inputHistory.Clear();
-                _TimerVisible = false;
-                Game.TimerText = null;
-                Game.Timer = 0;
                 RedrawAll();
             }
         }
@@ -289,11 +279,7 @@ namespace ToSTextClient
 
         public void RedrawTimer()
         {
-            lock (drawLock)
-            {
-                _TimerVisible = true;
-                RedrawPinned();
-            }
+            lock (drawLock) RedrawPinned();
         }
 
         protected void RedrawMainView()
@@ -327,7 +313,7 @@ namespace ToSTextClient
                         return;
                     }
                     if (sideWidth <= 0) return;
-                    pinnedHeight = sideRenderers[mainView.View.PinnedView].FullHeight + (_TimerVisible ? 1 : 0);
+                    pinnedHeight = sideRenderers[mainView.View.PinnedView].FullHeight + mainView.View.PinnedView?.Timers?.Where(t => t.Value > 0)?.Count() ?? 0;
                     RedrawPinned();
                     int lastSideHeight = 1;
                     sideHeight = 0;
@@ -391,15 +377,17 @@ namespace ToSTextClient
             {
                 bool state = StartRendering();
                 int pinnedFullHeight = mainView.View.PinnedView != null && sideRenderers.TryGetValue(mainView.View.PinnedView, out SideViewRenderer renderer) ? renderer.FullHeight : 0;
-                if (pinnedFullHeight + (_TimerVisible ? 1 : 0) != pinnedHeight) RedrawSideViews();
+                int timerCount = mainView.View.PinnedView.Timers.Where(t => t.Value > 0).Count();
+                if (pinnedFullHeight + timerCount != pinnedHeight) RedrawSideViews();
                 else
                 {
                     if (mainView.View.PinnedView != null && sideRenderers.TryGetValue(mainView.View.PinnedView, out renderer)) renderer.Render(sideWidth, pinnedFullHeight, fullHeight - pinnedHeight, mainWidth + 1);
-                    if (_TimerVisible)
+                    Console.CursorTop = fullHeight - timerCount - 1;
+                    foreach (INamedTimer timer in mainView.View.PinnedView.Timers.Where(t => t.Value > 0))
                     {
-                        Console.CursorTop = fullHeight - 1;
+                        Console.CursorTop++;
                         Console.CursorLeft = mainWidth + 1;
-                        Console.Write((Game.TimerText != null ? string.Format("{0}: {1}", Game.TimerText, Game.Timer) : "").PadRightHard(sideWidth));
+                        Console.Write(string.Format("{0}: {1}", timer.Name ?? "", timer.Value).PadRightHard(sideWidth));
                     }
                 }
                 ResetCursor(state);

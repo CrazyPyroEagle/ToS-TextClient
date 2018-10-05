@@ -29,11 +29,7 @@ namespace ToSTextClient
                 NightState = NightState.NONE;
                 Game.UI.CommandContext = CommandContext.DAY;
                 Game.UI.Views.Game.AppendLine(("Day {0}", TextClient.BLACK, TextClient.WHITE), _Day = value);
-                if (value == 1)
-                {
-                    Game.Timer = 15;
-                    Game.TimerText = "Discussion";
-                }
+                if (value == 1) Game.UI.Views.Game.PhaseTimer.Set("Discussion", 15);
             }
         }
         public int Night
@@ -44,8 +40,7 @@ namespace ToSTextClient
                 DayState = DayState.NONE;
                 Game.UI.CommandContext = CommandContext.NIGHT;
                 Game.UI.Views.Game.AppendLine(("Night {0}", TextClient.BLACK, TextClient.WHITE), _Night = value);
-                Game.Timer = Game.Resources.GetMetadata(GameMode).RapidMode ? 15 : 30;
-                Game.TimerText = "Night";
+                Game.UI.Views.Game.PhaseTimer.Set("Night", Game.Resources.GetMetadata(GameMode).RapidMode ? 15 : 37);
             }
         }
         public int AbilitiesLeft { get; set; }
@@ -111,8 +106,7 @@ namespace ToSTextClient
             Game.UI.CommandContext = CommandContext.PICK_NAMES;
             Game.UI.Views.Players.Redraw();
             Game.UI.Views.Game.AppendLine(("Please choose a name (or wait to get a random name)", TextClient.GREEN, null));
-            Game.Timer = 25;
-            Game.TimerText = "Pick Names";
+            Game.UI.Views.Game.PhaseTimer.Set("Pick Names", 25);
         }
 
         public void AddPlayer(Player player, bool host, bool display, string username, LobbyIcon lobbyIcon)
@@ -275,8 +269,7 @@ namespace ToSTextClient
                 game.Game.UI.Views.LastWill.Title = string.Format(" # (LW) {0}", game.ToName(ID));
                 game.Game.UI.Views.LastWill.Value = _LastWill = value;
                 game.Game.UI.OpenSideView(game.Game.UI.Views.LastWill);
-                game.Game.Timer = 6;
-                game.Game.TimerText = "Last Will";
+                game.Game.UI.Views.Game.PhaseTimer.Set("Last Will", 6);
             }
         }
         public string DeathNote

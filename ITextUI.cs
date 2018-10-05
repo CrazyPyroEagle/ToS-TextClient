@@ -18,7 +18,6 @@ namespace ToSTextClient
         string StatusLine { get; set; }
         CommandContext CommandContext { get; set; }
         bool RunInput { get; set; }
-        bool TimerVisible { get; set; }
 
         void RegisterCommand(Command command, params string[] names);
         void RegisterMainView(IView view, params string[] names);
@@ -36,13 +35,18 @@ namespace ToSTextClient
     {
         int MinimumWidth { get; }
         int MinimumHeight { get; }
-        IView PinnedView { get; }
+        IPinnedView PinnedView { get; }
 
         event Action<string, Exception> OnException;
         event Action OnTextChange;
 
         IEnumerable<FormattedString> Lines(int width);
         void Redraw();
+    }
+
+    public interface IPinnedView : IView
+    {
+        IEnumerable<INamedTimer> Timers { get; }
     }
 
     public interface ITextView : IView
@@ -55,6 +59,17 @@ namespace ToSTextClient
         void ReplaceLine(int index, FormattedString text);
         void ReplaceLine(int index, FormattedString format, params object[] args);
         void Clear();
+    }
+
+    public interface IHomeView : ITextView
+    {
+        INamedTimer FWotDTimer { get; }
+        INamedTimer QueueTimer { get; }
+    }
+
+    public interface IGameView : ITextView
+    {
+        IEditableNamedTimer PhaseTimer { get; }
     }
 
     public interface IWillView : IView
@@ -216,6 +231,19 @@ namespace ToSTextClient
             return result;
         }
         public static FormattedString operator +(FormattedString a, FormattedString b) => new FormattedString(a.values.Concat(b.values).ToArray());
+    }
+
+    public interface INamedTimer
+    {
+        string Name { get; }
+        int Value { get; }
+
+        void Set(int value);
+    }
+
+    public interface IEditableNamedTimer : INamedTimer
+    {
+        void Set(string name, int value);
     }
 
     public enum RedrawResult
